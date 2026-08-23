@@ -1,0 +1,849 @@
+openapi: 3.0.3
+info:
+  title: 工作轨迹系统 接口文档（阶段二）
+  description: 前后端共用接口契约，返回格式统一为 JSON，字段命名统一使用 camelCase。
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: 本地开发环境
+tags:
+  - name: 用户/认证
+  - name: 轨迹（手机端）
+  - name: 管理接口（管理端）
+paths:
+  /api/user/register:
+    post:
+      tags: [用户/认证]
+      summary: 注册
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '200':
+          description: 注册成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+        '409':
+          description: 用户名已存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+  /api/user/login:
+    post:
+      tags: [用户/认证]
+      summary: 登录
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResult'
+        '401':
+          description: 用户名或密码错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+  /api/user/info:
+    get:
+      tags: [用户/认证]
+      summary: 获取当前用户信息
+      operationId: currentUserInfo
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserInfoResult'
+        '401':
+          description: 未登录 / token 失效
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+  /api/user/logout:
+    post:
+      tags: [用户/认证]
+      summary: 退出登录
+      operationId: logout
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+  /api/track/upload:
+    post:
+      tags: [轨迹（手机端）]
+      summary: 上传轨迹
+      operationId: uploadTrack
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadTrackRequest'
+      responses:
+        '200':
+          description: 上传成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResult'
+        '401':
+          description: 未登录 / token 失效
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+  /api/track/list:
+    get:
+      tags: [轨迹（手机端）]
+      summary: 我的轨迹列表
+      operationId: myTrackList
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/pageSize'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackListResult'
+        '401':
+          description: 未登录 / token 失效
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+  /api/track/{id}:
+    get:
+      tags: [轨迹（手机端）]
+      summary: 轨迹详情
+      operationId: trackDetail
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/trackId'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackDetailResult'
+        '401':
+          description: 未登录 / token 失效
+        '403':
+          description: 无权限访问
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+        '404':
+          description: 资源不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+    delete:
+      tags: [轨迹（手机端）]
+      summary: 删除轨迹
+      operationId: deleteTrack
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/trackId'
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+        '401':
+          description: 未登录 / token 失效
+        '404':
+          description: 资源不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+  /api/admin/users:
+    get:
+      tags: [管理接口（管理端）]
+      summary: 用户列表
+      operationId: adminUserList
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/pageSize'
+        - name: keyword
+          in: query
+          required: false
+          description: 按用户名/昵称模糊搜索
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserListResult'
+        '403':
+          description: 无权限访问（非 ADMIN）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+  /api/admin/users/{id}/status:
+    put:
+      tags: [管理接口（管理端）]
+      summary: 用户状态更新（禁用/启用）
+      operationId: updateUserStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 用户ID
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStatusRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+        '403':
+          description: 无权限访问（非 ADMIN）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+  /api/admin/users/{id}/password:
+    put:
+      tags: [管理接口（管理端）]
+      summary: 重置用户密码
+      operationId: resetUserPassword
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 用户ID
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+        '403':
+          description: 无权限访问（非 ADMIN）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+  /api/admin/tracks:
+    get:
+      tags: [管理接口（管理端）]
+      summary: 全量轨迹列表
+      operationId: adminTrackList
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/pageSize'
+        - name: userId
+          in: query
+          required: false
+          description: 按用户筛选
+          schema:
+            type: integer
+            format: int64
+        - name: startTime
+          in: query
+          required: false
+          description: 开始时间（含），格式 yyyy-MM-dd HH:mm:ss
+          schema:
+            type: string
+        - name: endTime
+          in: query
+          required: false
+          description: 结束时间（含），格式 yyyy-MM-dd HH:mm:ss
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTrackListResult'
+        '403':
+          description: 无权限访问（非 ADMIN）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+  /api/admin/tracks/{id}:
+    get:
+      tags: [管理接口（管理端）]
+      summary: 轨迹详情（管理端）
+      operationId: adminTrackDetail
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/trackId'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTrackDetailResult'
+        '403':
+          description: 无权限访问（非 ADMIN）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+    delete:
+      tags: [管理接口（管理端）]
+      summary: 删除轨迹（管理端）
+      operationId: adminDeleteTrack
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/trackId'
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+        '403':
+          description: 无权限访问（非 ADMIN）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+  /api/admin/stats:
+    get:
+      tags: [管理接口（管理端）]
+      summary: 数据统计（仪表盘）
+      operationId: adminStats
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsResult'
+        '403':
+          description: 无权限访问（非 ADMIN）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NullResult'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    page:
+      name: page
+      in: query
+      required: false
+      description: 页码，从 1 开始
+      schema:
+        type: integer
+        default: 1
+    pageSize:
+      name: pageSize
+      in: query
+      required: false
+      description: 每页条数
+      schema:
+        type: integer
+        default: 10
+    trackId:
+      name: id
+      in: path
+      required: true
+      description: 轨迹ID
+      schema:
+        type: integer
+        format: int64
+  schemas:
+    # ---------- 通用请求体 ----------
+    RegisterRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          description: 用户名，3~50 位
+          example: zhangsan
+        password:
+          type: string
+          description: 密码，6~50 位
+          example: '123456'
+        nickname:
+          type: string
+          description: 昵称，默认同 username
+          example: 张三
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          example: admin
+        password:
+          type: string
+          example: '123456'
+    UploadTrackRequest:
+      type: object
+      required: [startTime, endTime, status, points]
+      properties:
+        startTime:
+          type: string
+          example: '2026-08-21 10:00:00'
+        endTime:
+          type: string
+          example: '2026-08-21 10:30:00'
+        status:
+          type: integer
+          description: 1=进行中，2=已完成
+          example: 2
+        distance:
+          type: number
+          format: double
+          description: 距离（米）
+          example: 1520.5
+        points:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/TrackPoint'
+    UpdateStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: integer
+          description: 0=禁用，1=启用
+          example: 0
+    ResetPasswordRequest:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+          description: 新密码
+          example: 'new123456'
+
+    # ---------- 通用数据结构 ----------
+    TrackPoint:
+      type: object
+      required: [latitude, longitude, recordTime]
+      properties:
+        latitude:
+          type: number
+          format: double
+          example: 23.2318
+        longitude:
+          type: number
+          format: double
+          example: 113.0731
+        recordTime:
+          type: string
+          example: '2026-08-21 10:00:05'
+    UserInfo:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        username:
+          type: string
+          example: admin
+        nickname:
+          type: string
+          example: 管理员
+        role:
+          type: string
+          example: ADMIN
+    LoginData:
+      type: object
+      properties:
+        token:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIs...
+        user:
+          $ref: '#/components/schemas/UserInfo'
+    TrackListItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1001
+        startTime:
+          type: string
+          example: '2026-08-21 10:00:00'
+        endTime:
+          type: string
+          example: '2026-08-21 10:30:00'
+        status:
+          type: integer
+          example: 2
+        distance:
+          type: number
+          format: double
+          example: 1520.5
+        pointCount:
+          type: integer
+          example: 360
+        createTime:
+          type: string
+          example: '2026-08-21 10:30:01'
+    TrackListData:
+      type: object
+      properties:
+        list:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackListItem'
+        total:
+          type: integer
+          example: 5
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 10
+    TrackDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1001
+        startTime:
+          type: string
+          example: '2026-08-21 10:00:00'
+        endTime:
+          type: string
+          example: '2026-08-21 10:30:00'
+        status:
+          type: integer
+          example: 2
+        distance:
+          type: number
+          format: double
+          example: 1520.5
+        points:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackPoint'
+    AdminUserListItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        username:
+          type: string
+          example: zhangsan
+        nickname:
+          type: string
+          example: 张三
+        role:
+          type: string
+          example: USER
+        status:
+          type: integer
+          example: 1
+        createTime:
+          type: string
+          example: '2026-08-21 09:00:00'
+    AdminUserListData:
+      type: object
+      properties:
+        list:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminUserListItem'
+        total:
+          type: integer
+          example: 50
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 10
+    AdminTrackListItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1001
+        username:
+          type: string
+          example: zhangsan
+        startTime:
+          type: string
+          example: '2026-08-21 10:00:00'
+        endTime:
+          type: string
+          example: '2026-08-21 10:30:00'
+        status:
+          type: integer
+          example: 2
+        distance:
+          type: number
+          format: double
+          example: 1520.5
+        pointCount:
+          type: integer
+          example: 360
+        createTime:
+          type: string
+          example: '2026-08-21 10:30:01'
+    AdminTrackListData:
+      type: object
+      properties:
+        list:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminTrackListItem'
+        total:
+          type: integer
+          example: 30
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 10
+    AdminTrackDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1001
+        username:
+          type: string
+          example: zhangsan
+        startTime:
+          type: string
+          example: '2026-08-21 10:00:00'
+        endTime:
+          type: string
+          example: '2026-08-21 10:30:00'
+        status:
+          type: integer
+          example: 2
+        distance:
+          type: number
+          format: double
+          example: 1520.5
+        points:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackPoint'
+    StatsData:
+      type: object
+      properties:
+        userCount:
+          type: integer
+          example: 50
+        trackCount:
+          type: integer
+          example: 300
+        todayTrackCount:
+          type: integer
+          example: 12
+        todayUserCount:
+          type: integer
+          example: 3
+
+    # ---------- 统一响应包装 ----------
+    NullResult:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          type: object
+          nullable: true
+          example: null
+    UserInfoResult:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/UserInfo'
+    LoginResult:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/LoginData'
+    UploadResult:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          type: object
+          properties:
+            id:
+              type: integer
+              format: int64
+              example: 1001
+    TrackListResult:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/TrackListData'
+    TrackDetailResult:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/TrackDetail'
+    AdminUserListResult:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/AdminUserListData'
+    AdminTrackListResult:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/AdminTrackListData'
+    AdminTrackDetailResult:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/AdminTrackDetail'
+    StatsResult:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: success
+        data:
+          $ref: '#/components/schemas/StatsData'

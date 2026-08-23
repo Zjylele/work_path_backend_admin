@@ -1,0 +1,40 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: work-path-backend
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/work_path?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    # 数据库账号/密码通过环境变量注入（避免密钥入库）。
+    # 本地启动示例：PowerShell 先执行
+    #   $env:DB_USERNAME='root'; $env:DB_PASSWORD='你的本地密码'
+    # 再运行 java -jar work-path-backend-0.0.1-SNAPSHOT.jar
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+  type-aliases-package: com.workpath.backend.entity
+
+jwt:
+  # JWT 签名密钥通过环境变量注入（避免密钥入库）。
+  # 本地启动示例：$env:JWT_SECRET='你的JWT密钥'
+  secret: ${JWT_SECRET}
+  expire: 604800000
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
