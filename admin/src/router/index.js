@@ -43,6 +43,18 @@ const routes = [
         name: 'LogList',
         component: () => import('@/views/log/index.vue'),
         meta: { title: '操作日志', icon: 'Document' }
+      },
+      {
+        path: 'policy',
+        name: 'PolicyList',
+        component: () => import('@/views/policy/index.vue'),
+        meta: { title: '制度知识库', icon: 'Notebook' }
+      },
+      {
+        path: 'model-providers',
+        name: 'ModelProviderConfig',
+        component: () => import('@/views/modelProvider/index.vue'),
+        meta: { title: '模型接入', icon: 'Connection' }
       }
     ]
   },
@@ -72,6 +84,11 @@ router.beforeEach((to) => {
   if (!userStore.isAdmin) {
     ElMessage.error('无权限访问')
     return '/login'
+  }
+  // 模型接入页仅超级管理员可进。后端 Service 层同样校验，这里只是提前拦住避免白跳一次
+  if (to.path === '/model-providers' && !userStore.isSuperAdmin) {
+    ElMessage.error('仅超级管理员可访问模型接入配置')
+    return '/dashboard'
   }
   return true
 })

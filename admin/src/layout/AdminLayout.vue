@@ -30,6 +30,15 @@
           <el-icon><Document /></el-icon>
           <span>操作日志</span>
         </el-menu-item>
+        <el-menu-item index="/policy">
+          <el-icon><Notebook /></el-icon>
+          <span>制度知识库</span>
+        </el-menu-item>
+        <!-- 模型接入配置：仅超级管理员可见，普通管理员看不到入口 -->
+        <el-menu-item v-if="isSuperAdmin" index="/model-providers">
+          <el-icon><Connection /></el-icon>
+          <span>模型接入</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
 
@@ -76,6 +85,8 @@ const nickname = computed(
 const pageTitle = computed(() => route.meta.title || '')
 // 详情页高亮父菜单
 const activeMenu = computed(() => route.meta.activeMenu || route.path)
+// 模型接入配置仅超级管理员可见；后端 Service 层同样校验，双保险
+const isSuperAdmin = computed(() => userStore.isSuperAdmin)
 
 function handleCommand(command) {
   if (command === 'logout') {
