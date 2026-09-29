@@ -51,6 +51,12 @@ const routes = [
         meta: { title: '制度知识库', icon: 'Notebook' }
       },
       {
+        path: 'work-events',
+        name: 'WorkEventList',
+        component: () => import('@/views/workEvent/index.vue'),
+        meta: { title: '工作事件复核', icon: 'Calendar' }
+      },
+      {
         path: 'model-providers',
         name: 'ModelProviderConfig',
         component: () => import('@/views/modelProvider/index.vue'),

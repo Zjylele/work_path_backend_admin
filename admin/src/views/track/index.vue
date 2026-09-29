@@ -50,6 +50,13 @@
         </template>
       </el-table-column>
       <el-table-column prop="pointCount" label="坐标点数" width="100" align="right" />
+      <el-table-column label="分析状态" width="110">
+        <template #default="{ row }">
+          <el-tag :type="analysisTagType(row.analysisStatus)" size="small">
+            {{ analysisLabel(row.analysisStatus) }}
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="createTime" label="创建时间" min-width="170" />
       <el-table-column label="操作" width="150" fixed="right">
         <template #default="{ row }">
@@ -173,6 +180,21 @@ onMounted(() => {
   fetchList()
   fetchUsers()
 })
+
+// 分析状态与 TrackAnalysisService 的四个常量一一对应。
+// 3（失败）要显式标出来：它不会自愈，且停在 1/0 之外的隐性问题会让
+// "这条轨迹为什么永远不出结果"变得难排查
+const ANALYSIS_LABELS = { 0: '未分析', 1: '分析中', 2: '已分析', 3: '分析失败' }
+function analysisLabel(s) {
+  return ANALYSIS_LABELS[s] ?? '未知'
+}
+function analysisTagType(s) {
+  if (s === 2) return 'success'
+  if (s === 3) return 'danger'
+  if (s === 1) return 'warning'
+  return 'info'
+}
+
 </script>
 
 <style scoped>

@@ -34,6 +34,10 @@
           <el-icon><Notebook /></el-icon>
           <span>制度知识库</span>
         </el-menu-item>
+        <el-menu-item index="/work-events">
+          <el-icon><Calendar /></el-icon>
+          <span>工作事件复核</span>
+        </el-menu-item>
         <!-- 模型接入配置：仅超级管理员可见，普通管理员看不到入口 -->
         <el-menu-item v-if="isSuperAdmin" index="/model-providers">
           <el-icon><Connection /></el-icon>
@@ -74,6 +78,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
 import { logout as logoutApi } from '@/api/user'
+import { Calendar } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()

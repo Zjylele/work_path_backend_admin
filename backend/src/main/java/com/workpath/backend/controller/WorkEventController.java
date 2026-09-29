@@ -1,0 +1,65 @@
+package com.workpath.backend.controller;
+
+import com.workpath.backend.common.Result;
+import com.workpath.backend.entity.WorkEvent;
+import com.workpath.backend.service.WorkEventService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+/**
+ * 工作事件（M4 产出的人工复核入口）。
+ *
+ * <p>确认与驳回是「AI 结论 → 管理依据」的开关：M5 的违规判定只认
+ * confirm_status=1 的事件。这是论文强调的「管理辅助工具」定位在接口层的体现。</p>
+ */
+@Tag(name = "工作事件", description = "AI 分析产出的事件列表与人工复核")
+@RestController
+@RequestMapping("/api/admin/work-events")
+@RequiredArgsConstructor
+public class WorkEventController {
+
+    private final WorkEventService workEventService;
+
+    @Operation(summary = "工作事件列表")
+    @GetMapping
+    public Result<List<WorkEvent>> list(
+            @RequestParam(required = false) Integer confirmStatus) {
+        return Result.success(workEventService.list(confirmStatus));
+    }
+
+    @Operation(summary = "工作事件详情")
+    @GetMapping("/{id}")
+    public Result<WorkEvent> detail(@PathVariable("id") Long id) {
+        return Result.success(workEventService.detail(id));
+    }
+
+    @Operation(summary = "确认事件（AI 结论转为管理依据）")
+    @PostMapping("/{id}/confirm")
+    public Result<Void> confirm(@PathVariable("id") Long id) {
+        workEventService.confirm(id);
+        return Result.success();
+    }
+
+    @Operation(summary = "驳回事件")
+    @PostMapping("/{id}/reject")
+    public Result<Void> reject(@PathVariable("id") Long id) {
+        workEventService.reject(id);
+        return Result.success();
+    }
+
+    @Operation(summary = "触发轨迹重新分析（下一轮定时任务执行）")
+    @PostMapping("/tracks/{trackId}/reanalyze")
+    public Result<Void> reanalyze(@PathVariable("trackId") Long trackId) {
+        workEventService.reanalyze(trackId);
+        return Result.success();
+    }
+}
