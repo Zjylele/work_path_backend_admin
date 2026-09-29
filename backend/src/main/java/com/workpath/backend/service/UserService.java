@@ -23,7 +23,6 @@ public class UserService {
 
     private final UserMapper userMapper;
     private final JwtUtil jwtUtil;
-    private final OperationLogService operationLogService;
 
     public void register(RegisterDTO dto) {
         Long count = userMapper.selectCount(
@@ -50,19 +49,13 @@ public class UserService {
                 new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<User>()
                         .eq(User::getUsername, dto.getUsername()));
         if (user == null || !BCrypt.checkpw(dto.getPassword(), user.getPassword())) {
-            operationLogService.record(null, dto.getUsername(), "LOGIN_FAIL",
-                    null, null, null, "用户名或密码错误", false);
             throw new BusinessException(ResultCode.UNAUTHORIZED.getCode(), "用户名或密码错误");
         }
         if (user.getStatus() != null && user.getStatus() == 0) {
-            operationLogService.record(null, dto.getUsername(), "LOGIN_FAIL",
-                    null, null, null, "账号已被禁用", false);
             throw new BusinessException(ResultCode.UNAUTHORIZED.getCode(), "账号已被禁用");
         }
 
         String token = jwtUtil.generateToken(user.getId(), user.getUsername(), user.getRole());
-        operationLogService.record(user.getId(), user.getUsername(), "LOGIN_SUCCESS",
-                null, null, null, null, true);
         LoginVO vo = new LoginVO();
         vo.setToken(token);
         vo.setUser(toUserVO(user));

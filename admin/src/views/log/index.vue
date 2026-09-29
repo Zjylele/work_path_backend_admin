@@ -42,7 +42,8 @@
     </div>
 
     <!-- 日志表格 -->
-    <el-table v-loading="loading" :data="list" stripe>
+    <el-table v-loading="loading" :data="list" stripe @selection-change="handleSelectionChange">
+      <el-table-column type="selection" width="50" />
       <el-table-column prop="createTime" label="操作时间" min-width="170" />
       <el-table-column prop="username" label="操作人" width="120">
         <template #default="{ row }">
@@ -76,10 +77,29 @@
           </el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="操作" width="90" fixed="right">
+        <template #default="{ row }">
+          <el-button link type="danger" @click="handleDeleteOne(row)">删除</el-button>
+        </template>
+      </el-table-column>
       <template #empty>
         <el-empty description="暂无日志" />
       </template>
     </el-table>
+
+    <!-- 批量操作栏 -->
+    <div class="batch-bar">
+      <span>已选 {{ selectedIds.length }} 条</span>
+      <el-button
+        type="danger"
+        plain
+        :disabled="selectedIds.length === 0"
+        @click="handleBatchDelete"
+      >
+        批量删除所选
+      </el-button>
+      <el-button type="danger" plain @click="handleClearAll">清空全部日志</el-button>
+    </div>
 
     <!-- 分页 -->
     <el-pagination
@@ -97,8 +117,9 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh } from '@element-plus/icons-vue'
-import { getLogList } from '@/api/admin'
+import { getLogList, deleteLog, deleteLogs } from '@/api/admin'
 
 // 动作码 → 中文标签
 const actionLabels = {
@@ -126,6 +147,7 @@ function actionTagType(action) {
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
+const selectedIds = ref([])
 const timeRange = ref([])
 const query = reactive({
   page: 1,
@@ -172,6 +194,58 @@ function handlePageChange(page) {
   fetchList()
 }
 
+function handleSelectionChange(rows) {
+  selectedIds.value = rows.map((r) => r.id)
+}
+
+// 单条删除
+async function handleDeleteOne(row) {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除该条日志吗？（${row.username || '-'} · ${row.action}）`,
+      '删除日志',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
+    )
+  } catch (e) {
+    return
+  }
+  await deleteLog(row.id)
+  ElMessage.success('已删除')
+  fetchList()
+}
+
+// 批量删除所选
+async function handleBatchDelete() {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除选中的 ${selectedIds.value.length} 条日志吗？此操作不可恢复`,
+      '批量删除日志',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
+    )
+  } catch (e) {
+    return
+  }
+  await deleteLogs(selectedIds.value)
+  ElMessage.success('已删除所选日志')
+  fetchList()
+}
+
+// 清空全部日志
+async function handleClearAll() {
+  try {
+    await ElMessageBox.confirm(
+      '确定清空全部日志吗？此操作不可恢复',
+      '清空全部日志',
+      { type: 'error', confirmButtonText: '清空', cancelButtonText: '取消' }
+    )
+  } catch (e) {
+    return
+  }
+  await deleteLogs([])
+  ElMessage.success('已清空全部日志')
+  fetchList()
+}
+
 function handleSizeChange(size) {
   query.pageSize = size
   query.page = 1
@@ -192,5 +266,12 @@ onMounted(fetchList)
 .pagination {
   margin-top: 16px;
   justify-content: flex-end;
+}
+
+.batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
 }
 </style>

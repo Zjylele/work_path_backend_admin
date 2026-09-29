@@ -5,9 +5,6 @@ import com.workpath.backend.common.ResultCode;
 import com.workpath.backend.dto.LoginDTO;
 import com.workpath.backend.dto.RegisterDTO;
 import com.workpath.backend.dto.UserProfileDTO;
-import com.workpath.backend.entity.User;
-import com.workpath.backend.interceptor.UserContext;
-import com.workpath.backend.service.OperationLogService;
 import com.workpath.backend.service.UserService;
 import com.workpath.backend.vo.LoginVO;
 import com.workpath.backend.vo.UserVO;
@@ -29,8 +26,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserController {
 
     private final UserService userService;
-
-    private final OperationLogService operationLogService;
 
     @Operation(summary = "注册")
     @PostMapping("/register")
@@ -60,11 +55,6 @@ public class UserController {
     @Operation(summary = "退出登录")
     @PostMapping("/logout")
     public Result<Void> logout() {
-        User current = UserContext.get();
-        if (current != null) {
-            operationLogService.record(current.getId(), current.getUsername(), "LOGOUT",
-                    null, null, null, null, true);
-        }
         return Result.success();
     }
 

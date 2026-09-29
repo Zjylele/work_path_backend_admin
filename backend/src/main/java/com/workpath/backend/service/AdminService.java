@@ -182,6 +182,24 @@ public class AdminService {
         return operationLogMapper.selectPage(new Page<>(page, pageSize), wrapper);
     }
 
+    /** 删除单条操作日志 */
+    public void deleteLog(Long id) {
+        if (operationLogMapper.selectById(id) == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "日志不存在");
+        }
+        operationLogMapper.deleteById(id);
+    }
+
+    /** 批量删除操作日志（ids 为空则视为删除全部） */
+    @Transactional
+    public void deleteLogs(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            operationLogMapper.delete(null);
+        } else {
+            operationLogMapper.deleteBatchIds(ids);
+        }
+    }
+
     /** 记录当前操作人（UserContext）的管理操作日志；记录失败不影响主流程 */
     private void recordLog(String action, String targetType, Long targetId,
                            String targetName, String detail) {

@@ -37,3 +37,9 @@ export function deleteTrack(id) {
 export function getLogList(params) {
   return request.get('/admin/logs', { params })
 }
+export function deleteLog(id) {
+  return request.delete(`/admin/logs/${id}`)
+}
+export function deleteLogs(ids) {
+  return request.delete('/admin/logs', { data: ids })
+}

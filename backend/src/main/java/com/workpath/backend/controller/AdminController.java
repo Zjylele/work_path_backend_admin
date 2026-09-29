@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Tag(name = "管理端", description = "用户管理、轨迹管理、数据统计（需 ADMIN 角色）")
 @RestController
@@ -112,6 +113,20 @@ public class AdminController {
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
         return Result.success(PageVO.of(adminService.logList(page, pageSize, username, action, startTime, endTime)));
+    }
+
+    @Operation(summary = "删除单条操作日志")
+    @DeleteMapping("/logs/{id}")
+    public Result<Void> deleteLog(@PathVariable Long id) {
+        adminService.deleteLog(id);
+        return Result.success();
+    }
+
+    @Operation(summary = "批量删除操作日志（body 传 id 数组，缺省/空数组=清空全部）")
+    @DeleteMapping("/logs")
+    public Result<Void> deleteLogs(@RequestBody(required = false) List<Long> ids) {
+        adminService.deleteLogs(ids);
+        return Result.success();
     }
 
 }
