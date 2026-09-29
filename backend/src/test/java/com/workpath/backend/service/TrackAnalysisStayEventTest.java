@@ -140,6 +140,8 @@ class TrackAnalysisStayEventTest {
     @Test
     @DisplayName("整条轨迹都在移动时不写任何事件")
     void noStayWritesNothing() {
+        // 全程慢速移动：每步 10 米、5 秒一步 = 2 m/s，共走出 1210 米，
+        // 任意相隔 10 分钟的两点都相距远超 eps，不会形成停留
         List<TrackPoint> pts = new java.util.ArrayList<>();
         for (int i = 0; i < 121; i++) {
             TrackPoint p = new TrackPoint();
@@ -189,6 +191,89 @@ class TrackAnalysisStayEventTest {
         WorkEvent e = cap.getValue();
         assertThat(e.getStartTime()).isEqualTo(T0);
         assertThat(e.getEndTime()).isEqualTo(T0.plusSeconds(600));
+    }
+
+    @Test
+    @DisplayName("prompt 明确枚举标签与输出格式——旧版因无判定依据，实测几乎全返回其他|0.3")
+    void promptConstrainsLabelEnumAndFormat() {
+        oneStay60s();
+        when(chatClient.chat(any(), any())).thenReturn(Optional.of("客户拜访|0.8"));
+
+        service.analyze(track(1L));
+
+        ArgumentCaptor<String> systemCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> userCaptor = ArgumentCaptor.forClass(String.class);
+        verify(chatClient).chat(systemCaptor.capture(), userCaptor.capture());
+
+        String system = systemCaptor.getValue();
+        // 五个标签必须都在，少一个模型就可能输出集合外的词，
+        // 而 parseLabel 拿到集合外标签时会照样往库里写
+        assertThat(system)
+                .contains("客户拜访", "用餐", "通勤", "驻点办公", "其他")
+                .as("system 提示必须把标签枚举说全，否则模型随手造词");
+        // 判定依据是这次改动的核心：没有依据时模型只会选最安全的「其他」
+        assertThat(system)
+                .as("prompt 必须给出判定依据（场地性质 × 时长），否则实测输出几乎全是其他|0.3")
+                .contains("产业园区", "餐厅", "住宅区");
+        assertThat(system).contains("标签|置信度");
+
+        String user = userCaptor.getValue();
+        assertThat(user).contains("600").contains("秒");
+    }
+
+    @Test
+    @DisplayName("置信度越界时截断到 0-1（模型可能给 85 表示 85%）")
+    void confidenceIsClamped() {
+        oneStay60s();
+        when(chatClient.chat(any(), any())).thenReturn(Optional.of("客户拜访|85"));
+
+        service.analyze(track(1L));
+
+        ArgumentCaptor<WorkEvent> cap = ArgumentCaptor.forClass(WorkEvent.class);
+        verify(workEventMapper).insert(cap.capture());
+        assertThat(cap.getValue().getConfidence()).isEqualTo(1.0);
+        assertThat(cap.getValue().getSemanticLabel()).isEqualTo("客户拜访");
+    }
+
+    @Test
+    @DisplayName("模型输出没有分隔符时整体当标签，置信度留空")
+    void labelWithoutConfidenceIsAccepted() {
+        oneStay60s();
+        when(chatClient.chat(any(), any())).thenReturn(Optional.of("客户拜访"));
+
+        service.analyze(track(1L));
+
+        ArgumentCaptor<WorkEvent> cap = ArgumentCaptor.forClass(WorkEvent.class);
+        verify(workEventMapper).insert(cap.capture());
+        assertThat(cap.getValue().getSemanticLabel()).isEqualTo("客户拜访");
+        assertThat(cap.getValue().getConfidence()).isNull();
+    }
+
+    @Test
+    @DisplayName("置信度不是数字时只用标签，不因解析失败丢掉整条事件")
+    void nonNumericConfidenceKeepsLabel() {
+        oneStay60s();
+        when(chatClient.chat(any(), any())).thenReturn(Optional.of("客户拜访|较高"));
+
+        service.analyze(track(1L));
+
+        ArgumentCaptor<WorkEvent> cap = ArgumentCaptor.forClass(WorkEvent.class);
+        verify(workEventMapper).insert(cap.capture());
+        assertThat(cap.getValue().getSemanticLabel()).isEqualTo("客户拜访");
+        assertThat(cap.getValue().getConfidence()).isNull();
+    }
+
+    @Test
+    @DisplayName("模型输出空字符串时语义标注视为未获得")
+    void blankLabelIsIgnored() {
+        oneStay60s();
+        when(chatClient.chat(any(), any())).thenReturn(Optional.of("   "));
+
+        service.analyze(track(1L));
+
+        ArgumentCaptor<WorkEvent> cap = ArgumentCaptor.forClass(WorkEvent.class);
+        verify(workEventMapper).insert(cap.capture());
+        assertThat(cap.getValue().getSemanticLabel()).isNull();
     }
 
     // ============================================================
