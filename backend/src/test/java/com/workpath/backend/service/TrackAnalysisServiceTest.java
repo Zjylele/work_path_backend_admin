@@ -30,13 +30,21 @@ class TrackAnalysisServiceTest {
 
     private TrackPointMapper trackPointMapper;
     private WorkEventMapper workEventMapper;
+    private com.workpath.backend.service.modelProvider.GeoClient geoClient;
+    private ChatClient chatClient;
     private TrackAnalysisService service;
 
     @BeforeEach
     void setUp() {
         trackPointMapper = Mockito.mock(TrackPointMapper.class);
         workEventMapper = Mockito.mock(WorkEventMapper.class);
-        service = new TrackAnalysisService(trackPointMapper, workEventMapper);
+        geoClient = Mockito.mock(
+                com.workpath.backend.service.modelProvider.GeoClient.class);
+        chatClient = Mockito.mock(ChatClient.class);
+        service = new TrackAnalysisService(
+                trackPointMapper, workEventMapper,
+                new com.workpath.backend.service.analyze.StayPointDetector(300),
+                geoClient, chatClient);
     }
 
     @Test
@@ -54,9 +62,8 @@ class TrackAnalysisServiceTest {
     @Test
     @DisplayName("分析前先清旧事件，保证同一条轨迹重跑不累积重复结论")
     void clearsOldEventsBeforeInsert() {
-        LocalDateTime t0 = LocalDateTime.of(2026, 9, 1, 9, 0);
-        Mockito.when(trackPointMapper.selectByTrackId(1L))
-                .thenReturn(List.of(point(t0), point(t0.plusMinutes(30))));
+        List<TrackPoint> pts = stayAtSamePlace(121);
+        Mockito.when(trackPointMapper.selectByTrackId(1L)).thenReturn(pts);
 
         service.analyze(track(1L));
 
@@ -70,9 +77,8 @@ class TrackAnalysisServiceTest {
     @DisplayName("产出的事件 confirm_status 恒为 0（待确认）——AI 结论不直接变管理依据")
     void eventStaysPendingConfirmation() {
         LocalDateTime t0 = LocalDateTime.of(2026, 9, 1, 9, 0);
-        LocalDateTime t1 = t0.plusMinutes(30);
         Mockito.when(trackPointMapper.selectByTrackId(1L))
-                .thenReturn(List.of(point(t0), point(t1)));
+                .thenReturn(stayAtSamePlace(121));
 
         service.analyze(track(1L));
 
@@ -82,12 +88,31 @@ class TrackAnalysisServiceTest {
         assertThat(e.getConfirmStatus()).isZero();
         assertThat(e.getTrackId()).isEqualTo(1L);
         assertThat(e.getUserId()).isEqualTo(42L);
+        assertThat(e.getEventType()).isEqualTo("STAY");
         // 首尾点时间落入事件区间
         assertThat(e.getStartTime()).isEqualTo(t0);
-        assertThat(e.getEndTime()).isEqualTo(t1);
+        assertThat(e.getEndTime()).isEqualTo(t0.plusSeconds(600));
     }
 
     // ---- 测试替身 ----
+
+    /**
+     * 持续 n×5 秒的静止轨迹。
+     *
+     * <p>W4 起算法要求"簇内点间距在 eps 内且数量达到 minPts"才能形成停留，
+     * 所以这些用例必须造静止段而不是两个相距 30 分钟的同坐标点
+     * （后者只有 2 个点，凑不出一个簇，一条事件都不会有）。</p>
+     */
+    private List<TrackPoint> stayAtSamePlace(int n) {
+        List<TrackPoint> pts = new java.util.ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            double jitter = (i % 2 == 0 ? 1 : -1) * 0.000010 * ((i % 3) + 1);
+            pts.add(point(
+                    LocalDateTime.of(2026, 9, 1, 9, 0).plusSeconds((long) i * 5),
+                    31.2 + jitter, 121.4 + jitter));
+        }
+        return pts;
+    }
 
     private Track track(Long id) {
         Track t = new Track();
@@ -97,10 +122,14 @@ class TrackAnalysisServiceTest {
     }
 
     private TrackPoint point(LocalDateTime time) {
+        return point(time, 31.2, 121.4);
+    }
+
+    private TrackPoint point(LocalDateTime time, double lat, double lng) {
         TrackPoint p = new TrackPoint();
         p.setTrackId(1L);
-        p.setLatitude(31.2);
-        p.setLongitude(121.4);
+        p.setLatitude(lat);
+        p.setLongitude(lng);
         p.setRecordTime(time);
         return p;
     }
