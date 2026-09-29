@@ -1,21 +1,20 @@
 package com.workpath.backend.service.modelProvider;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.workpath.backend.entity.ModelProviderConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.web.client.RestClientException;
-import org.springframework.web.client.RestTemplate;
 
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.net.URI;
 import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -49,35 +48,37 @@ public class GeoClient {
      */
     private static final int COORD_SCALE = 5;
 
-    /** 单次请求超时。外网抖一下很正常，但不能让它拖垮整轮定时任务。 */
-    private static final Duration TIMEOUT = Duration.ofSeconds(3);
-
-    private final RestTemplate restTemplate;
-
-    /** baseUrl → apiKey。缺配置时 baseUrl 为空，按未启用处理。 */
-    private final String baseUrl;
-
-    private final String apiKey;
+    /** 连接与读取超时。外网抖一下很正常，但不能让它拖垮整轮定时任务。 */
+    private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(3);
 
     /**
      * 坐标 key → 地名。
      *
      * <p>value 直接存 String 而不是 Optional&lt;String&gt;：这张表只存放<b>成功</b>
-     * 的结果，所以要区分「没查过」和「查过但失败」两种状态时，
-     * 前者是 key 不存在、后者是 value 为 null。若把失败也以 empty 的
-     * Optional 存进来，就分不出了，也就没法做到失败不进缓存。</p>
+     * 的结果，所以"没查过"表现为 key 不存在，"查过但失败"根本不会写进来。
+     * 若把失败也以 empty 的 Optional 存进来，就分不出这两者了。</p>
      */
     private final Map<String, String> cache = new ConcurrentHashMap<>();
 
+    private final String baseUrl;
+
+    private final String apiKey;
+
+    private final HttpClient httpClient;
+
     public GeoClient(String baseUrl, String apiKey) {
-        this(baseUrl, apiKey, TIMEOUT);
+        this(baseUrl, apiKey, HTTP_TIMEOUT);
     }
 
     public GeoClient(String baseUrl, String apiKey, Duration timeout) {
         this.baseUrl = baseUrl == null ? "" : baseUrl.trim();
         this.apiKey = apiKey == null ? "" : apiKey.trim();
-        Duration effective = timeout == null ? TIMEOUT : timeout;
-        this.restTemplate = new RestTemplateBuilderShim().build(effective);
+        Duration effective = timeout == null ? HTTP_TIMEOUT : timeout;
+        // 每实例一个连接池。POI 解析有本地缓存兜着，请求量小，
+        // 不必像 EmbeddingClient 那样共享容器里的单例
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(effective)
+                .build();
     }
 
     /**
@@ -103,7 +104,7 @@ public class GeoClient {
         }
 
         Optional<String> resolved = query(lat, lng);
-        // 只缓存成功结果：失败多半是临时的（限流、网络抖动、key 填错），
+        // 只缓存成功结果。失败多半是临时的（限流、网络抖动、key 填错），
         // 缓存住会让「修好配置必须重启才生效」
         resolved.ifPresent(v -> cache.put(key, v));
         return resolved;
@@ -125,55 +126,70 @@ public class GeoClient {
         // 顺序反了不会报错（两边都在合法范围内），只会解析到另一个地方，
         // 这种静默错位的排查成本极高，所以这里显式注释钉住。
         //
-        // URL 手工拼而不是走 restTemplate 的占位符展开：占位符会把 location
-        // 当普通文本塞进 URI，逗号不被编码成 %2C，而坐标小数位也会被
-        // 次的 round 弄丢。手工拼 + URLEncoder 能同时保证顺序、精度与编码。
+        // URL 手工拼 + URLEncoder：占位符展开会把 location 当普通文本塞 URI，
+        // 逗号不被编码成 %2C，某些代理层会把它当参数分隔符，高德那头只收到
+        // 一段坐标，解析到错位置且不报错。
         String location = fullPrecision(lng) + "," + fullPrecision(lat);
 
         try {
             String url = baseUrl + "/v3/geocode/regeo?key=" + encode(apiKey)
                     + "&location=" + encode(location);
-            Map<?, ?> body = restTemplate.getForObject(url, Map.class);
-            if (body == null) {
+            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                    .timeout(HTTP_TIMEOUT)
+                    .header("Accept", "application/json")
+                    .GET()
+                    .build();
+            HttpResponse<String> resp = send(req);
+
+            if (resp.statusCode() / 100 != 2) {
+                log.warn("逆地理编码 HTTP {} key=…{}", resp.statusCode(), tail(apiKey));
                 return Optional.empty();
             }
-            if (!"1".equals(String.valueOf(body.get("status")))) {
+
+            // 用原生 ObjectMapper 而非 RestTemplate 的 Map 反序列化。
+            // 实测踩过的坑：RestTemplate 走 Spring 的
+            // MappingJackson2HttpMessageConverter，本项目里它把高德响应中的
+            // 每个字符串字段都解析成了空 List（formatted_address=[]、
+            // province=[] ...），而同一响应用 curl 与原生 ObjectMapper
+            // 都拿到正常字符串。EmbeddingClient/ChatClient 一直走这条原生
+            // 链路且 M6 已实测可用，这里与它们保持一致。
+            JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper()
+                    .readTree(resp.body());
+            if (!"1".equals(root.path("status").asText())) {
                 log.debug("逆地理编码未返回成功 key=…{} info={}",
-                        tail(apiKey), body.get("info"));
+                        tail(apiKey), root.path("info").asText());
                 return Optional.empty();
             }
-            Object regeo = body.get("regeocode");
-            if (!(regeo instanceof Map<?, ?> regeoMap)) {
+            JsonNode address = root.path("regeocode").path("formatted_address");
+            if (!address.isTextual() || address.asText().isBlank()) {
+                // isTextual 只对字符串为真：高德对个别坐标会把这个字段返成
+                // 空数组，此时 asText() 得到 ""，若照落就成了空地点名
+                log.debug("逆地理编码未解析到地名 key=…{} nodeType={}",
+                        tail(apiKey), address.getNodeType());
                 return Optional.empty();
             }
-            String address = String.valueOf(regeoMap.get("formatted_address"));
-            if (address == null || address.isBlank() || "null".equals(address)) {
-                return Optional.empty();
-            }
-            return Optional.of(address.trim());
-        } catch (RestClientException | IllegalArgumentException | UnsupportedEncodingException e) {
-            // RestClientException 覆盖超时、连接失败、DNS 失败；
+            return Optional.of(address.asText().trim());
+        } catch (IOException | InterruptedException | IllegalArgumentException e) {
+            // IOException 覆盖超时、连接失败、DNS 失败；
             // IllegalArgumentException 覆盖 URI 里出现非法字符。
             // 两者都不该让轨迹分析失败
             log.warn("逆地理编码查询异常 key=…{}: {}", tail(apiKey), e.getMessage());
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             return Optional.empty();
         }
+    }
+
+    /** 发 GET。单独抽一层是为了测试能替换成不发真请求的实现。 */
+    HttpResponse<String> send(HttpRequest req) throws IOException, InterruptedException {
+        return httpClient.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
     }
 
     private static boolean isValidLatLng(Double lat, Double lng) {
         return lat != null && lng != null
                 && lat >= -90.0 && lat <= 90.0
                 && lng >= -180.0 && lng <= 180.0;
-    }
-
-    private static String round(double v) {
-        return BigDecimal.valueOf(v)
-                .setScale(COORD_SCALE, RoundingMode.HALF_UP)
-                .toPlainString();
-    }
-
-    private static String coordKey(double lat, double lng) {
-        return round(lat) + ',' + round(lng);
     }
 
     /**
@@ -200,25 +216,17 @@ public class GeoClient {
         return URLEncoder.encode(raw, StandardCharsets.UTF_8);
     }
 
-    private static String tail(String key) {
-        return key.length() <= 4 ? key : key.substring(key.length() - 4);
+    private static String coordKey(double lat, double lng) {
+        return round(lat) + ',' + round(lng);
     }
 
-    /**
-     * RestTemplate 的超时设置入口。
-     *
-     * <p>单独抽一层是为了不把 Spring 的 builder 细节散到 GeoClient 之外：
-     * 生产环境用 {@link HttpClientConfig} 里那个复用连接池的 RestTemplate 会更省，
-     * 但 GeoClient 会被缓存大量请求，独立实例 + 固定连接池也够用，
-     * 且让测试能指向本地假服务商。</p>
-     */
-    private static final class RestTemplateBuilderShim {
-        org.springframework.web.client.RestTemplate build(Duration timeout) {
-            org.springframework.http.client.SimpleClientHttpRequestFactory factory =
-                    new org.springframework.http.client.SimpleClientHttpRequestFactory();
-            factory.setConnectTimeout((int) timeout.toMillis());
-            factory.setReadTimeout((int) timeout.toMillis());
-            return new org.springframework.web.client.RestTemplate(factory);
-        }
+    private static String round(double v) {
+        return BigDecimal.valueOf(v)
+                .setScale(COORD_SCALE, RoundingMode.HALF_UP)
+                .toPlainString();
+    }
+
+    private static String tail(String key) {
+        return key.length() <= 4 ? key : key.substring(key.length() - 4);
     }
 }

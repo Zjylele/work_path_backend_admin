@@ -79,9 +79,13 @@ class GeoClientTest {
             Optional<String> poi = client.reverseGeocode(30.657261, 104.066678);
 
             assertThat(poi).contains("四川省成都市青羊区西御河街道天府广场");
-            // 经纬度必须按「经度,纬度」传给高德——顺序反了会解析到别的位置，
-            // 而高德对合法坐标不会报错，只是给个错误结果，极难发现
-            assertThat(server.lastQuery).contains("location=104.066678%2C30.657261");
+            // 经纬度必须按「经度,纬度」传给高德，且逗号必须编码成 %2C。
+            // 顺序反了不会报错（两边都在合法范围内），只会解析到别的位置，
+            // 而高德照常返回一个看似正常的结果，极难发现
+            assertThat(server.lastQuery)
+                    .as("location 参数必须是「经度,纬度」且逗号已编码，实际收到：%s", server.lastQuery)
+                    .isNotNull()
+                    .contains("location=104.066678%2C30.657261");
         } finally {
             server.stop();
         }
@@ -183,6 +187,36 @@ class GeoClientTest {
         }
     }
 
+    @Test
+    @DisplayName("formatted_address 是数组或对象时返回 empty，不能落成 [] 字样")
+    void nonStringAddressReturnsEmpty() throws Exception {
+        // 实测踩过：高德对个别坐标把这个字段返成 []，而 String.valueOf([])
+        // 会得到字面量 "[]"，直接落进 poi_name，前端显示出「地点 []」
+        String body = "{\"status\":\"1\",\"info\":\"OK\","
+                + "\"regeocode\":{\"formatted_address\":[]}}";
+        FakeGeoServer server = new FakeGeoServer(body);
+        server.start();
+        try {
+            GeoClient client = new GeoClient(server.baseUrl(), "k",
+                    java.time.Duration.ofMillis(5_000));
+            assertThat(client.reverseGeocode(30.657261, 104.066678)).isEmpty();
+        } finally {
+            server.stop();
+        }
+
+        String objBody = "{\"status\":\"1\",\"info\":\"OK\","
+                + "\"regeocode\":{\"formatted_address\":{\"x\":1}}}";
+        FakeGeoServer server2 = new FakeGeoServer(objBody);
+        server2.start();
+        try {
+            GeoClient client = new GeoClient(server2.baseUrl(), "k",
+                    java.time.Duration.ofMillis(5_000));
+            assertThat(client.reverseGeocode(31.0, 121.0)).isEmpty();
+        } finally {
+            server2.stop();
+        }
+    }
+
     // ============================================================
     // 本地假高德服务
     // ============================================================
@@ -201,7 +235,10 @@ class GeoClientTest {
                     new java.net.InetSocketAddress("127.0.0.1", 0), 0);
             this.server.createContext("/v3/geocode/regeo", exchange -> {
                 hits.incrementAndGet();
-                lastQuery = exchange.getRequestURI().getQuery();
+                // 必须用 getRawQuery()：getQuery() 返回的是已解码串，
+                // %2C 会被还原成逗号，那样就无法验证「逗号确实被编码过」。
+                // 而逗号编码恰恰是上一版踩过的坑（代理层把它当参数分隔符）。
+                lastQuery = exchange.getRequestURI().getRawQuery();
                 byte[] out = body.getBytes(java.nio.charset.StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().add("Content-Type", "application/json; charset=utf-8");
                 exchange.sendResponseHeaders(200, out.length);
