@@ -10,6 +10,7 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public interface TrackMapper extends BaseMapper<Track> {
 
@@ -39,5 +40,22 @@ public interface TrackMapper extends BaseMapper<Track> {
                                           @Param("userId") Long userId,
                                           @Param("startTime") LocalDateTime startTime,
                                           @Param("endTime") LocalDateTime endTime);
+
+    /**
+     * 捞待分析的轨迹。定时任务用，只取未分析（analysis_status=0）的。
+     *
+     * <p>按 start_time 升序——先传的轨迹先分析，避免新上传的把老轨迹挤到后面
+     * 永远排不上（积压场景下这会让最早的几条数据长期不出结果）。
+     * ORDER BY start_time 而非 id，因为轨迹的 start_time 才对应真实的业务先后。</p>
+     *
+     * @param limit 单轮最多捞几条，防止一次捞太多把线程池占满
+     */
+    @Select("""
+            SELECT * FROM track
+            WHERE analysis_status = 0
+            ORDER BY start_time ASC, id ASC
+            LIMIT #{limit}
+            """)
+    List<Track> selectPendingAnalysis(@Param("limit") int limit);
 
 }

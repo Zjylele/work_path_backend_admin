@@ -159,3 +159,57 @@ CREATE TABLE IF NOT EXISTS `rectification_order` (
   KEY `idx_order_user` (`user_id`),
   KEY `idx_order_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='整改工单表';
+
+-- ============================================================
+-- 阶段三补充：M4 轨迹智能分析（W3 数据模型）
+-- 说明：work_event 是 AI 分析的工作事件落库表。init_ai.sql 原有的表
+-- 面向 M5/M6，本节按顺序补在文件末尾不代表依赖，仅表示同属阶段三。
+-- ============================================================
+
+-- M4 分析依赖 track_point 按 track_id 取全量点跑 DBSCAN。
+-- 原表只有 id 主键，这条查询会全表扫——随轨迹点积累（每个轨迹几十到几百个点）
+-- 早晚变成瓶颈，而且 analysis 是定时跑的，慢查询会一直复现。
+-- 用存储过程包住，保证重复执行本脚本不报错。
+DROP PROCEDURE IF EXISTS add_track_point_track_idx;
+DELIMITER $$
+CREATE PROCEDURE add_track_point_track_idx()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'track_point'
+      AND INDEX_NAME = 'idx_track_point_track'
+  ) THEN
+    ALTER TABLE `track_point` ADD INDEX `idx_track_point_track` (`track_id`, `record_time`);
+  END IF;
+END$$
+DELIMITER ;
+CALL add_track_point_track_idx();
+DROP PROCEDURE IF EXISTS add_track_point_track_idx;
+
+-- 同理，定时任务按 analysis_status 捞轨迹。
+DROP PROCEDURE IF EXISTS add_track_analysis_status_idx;
+DELIMITER $$
+CREATE PROCEDURE add_track_analysis_status_idx()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'track'
+      AND INDEX_NAME = 'idx_track_analysis_status'
+  ) THEN
+    ALTER TABLE `track` ADD INDEX `idx_track_analysis_status` (`analysis_status`, `start_time`);
+  END IF;
+END$$
+DELIMITER ;
+CALL add_track_analysis_status_idx();
+DROP PROCEDURE IF EXISTS add_track_analysis_status_idx;
+
+-- 工作事件表：AI 分析的最终产出。
+--
+-- [!] 该表 init_ai.sql 早已建好（字段 semantic_label / confidence / ai_reason /
+-- dwell_seconds / center_lat / center_lng），W3 不重复建表，直接沿用。
+-- WorkEvent 实体的字段必须与既有表逐字对齐——曾因自行改名（event_desc /
+-- duration_seconds）导致 INSERT 报 Unknown column。
+--
+-- confirm_status=0 是「AI 结论以疑似、待人工复核形式输出」这个定位在数据模型
+-- 上的落点——没有它，AI 结论就直接变成管理依据了，与论文强调的「管理辅助工具」
+-- 定位直接冲突。
