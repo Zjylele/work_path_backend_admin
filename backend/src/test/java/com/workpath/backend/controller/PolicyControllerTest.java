@@ -1,9 +1,11 @@
 package com.workpath.backend.controller;
 
 import com.workpath.backend.common.Result;
+import com.workpath.backend.dto.PolicyAskDTO;
 import com.workpath.backend.dto.PolicyUploadDTO;
 import com.workpath.backend.entity.PolicyClause;
 import com.workpath.backend.entity.PolicyDocument;
+import com.workpath.backend.service.ClauseQaService;
 import com.workpath.backend.service.PolicyClauseService;
 import com.workpath.backend.service.PolicyDocumentService;
 import org.junit.jupiter.api.DisplayName;
@@ -27,7 +29,9 @@ class PolicyControllerTest {
 
     private final PolicyDocumentService documentService = Mockito.mock(PolicyDocumentService.class);
     private final PolicyClauseService clauseService = Mockito.mock(PolicyClauseService.class);
-    private final PolicyController controller = new PolicyController(documentService, clauseService);
+    private final ClauseQaService clauseQaService = Mockito.mock(ClauseQaService.class);
+    private final PolicyController controller =
+            new PolicyController(documentService, clauseService, clauseQaService);
 
     @Test
     @DisplayName("上传接口返回 docId 与 version，方便前端直接展示")
@@ -93,5 +97,41 @@ class PolicyControllerTest {
         Mockito.when(clauseService.reindex(3L)).thenReturn(4);
         Result<Map<String, Object>> res = controller.reindex(3L);
         assertThat(res.getData().get("updated")).isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("问答接口把答案与引用一起返回")
+    void askReturnsAnswerAndCitations() {
+        ClauseQaService.Citation citation = new ClauseQaService.Citation(
+                11L, 7L, "1.1", "外勤人员管理制度", "v1.0", "外勤人员应提前一个工作日报备。", 0.83);
+        ClauseQaService.Answer answer = new ClauseQaService.Answer(
+                "需要提前报备，依据条款 1.1。", List.of(citation), true);
+        Mockito.when(clauseQaService.ask("外出要报备吗", 5)).thenReturn(answer);
+
+        PolicyAskDTO dto = new PolicyAskDTO();
+        dto.setQuestion("外出要报备吗");
+        dto.setTopK(5);
+        Result<ClauseQaService.Answer> res = controller.ask(dto);
+
+        assertThat(res.getCode()).isEqualTo(200);
+        assertThat(res.getData().answered()).isTrue();
+        assertThat(res.getData().text()).contains("依据条款 1.1");
+        assertThat(res.getData().citations()).extracting(ClauseQaService.Citation::clauseId)
+                .containsExactly(11L);
+    }
+
+    @Test
+    @DisplayName("未检索到条款时 answered=false，答案说明没找到依据")
+    void askWithoutContext() {
+        // topK 不传时为 null，mock 必须用 any() 才能匹配（anyInt() 不匹配 null）
+        Mockito.when(clauseQaService.ask(Mockito.anyString(), Mockito.any()))
+                .thenReturn(new ClauseQaService.Answer("未在制度知识库中检索到相关内容", List.of(), false));
+
+        PolicyAskDTO dto = new PolicyAskDTO();
+        dto.setQuestion("公司食堂几点开饭");
+        Result<ClauseQaService.Answer> res = controller.ask(dto);
+
+        assertThat(res.getData().answered()).isFalse();
+        assertThat(res.getData().citations()).isEmpty();
     }
 }

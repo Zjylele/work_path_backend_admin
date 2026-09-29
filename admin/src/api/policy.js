@@ -20,3 +20,6 @@ export function reindexPolicyDocument(id) {
 export function searchPolicyClauses(query, topK) {
   return request.get('/admin/policy/clauses/search', { params: { query, topK } })
 }
+export function askPolicyClause(question, topK) {
+  return request.post('/admin/policy/clauses/ask', { question, topK })
+}

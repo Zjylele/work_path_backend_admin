@@ -58,10 +58,42 @@
         </el-card>
       </el-col>
 
-      <!-- 右：条款 + 检索 -->
+      <!-- 右：问答 + 检索 + 条款 -->
       <el-col :span="10">
         <el-card shadow="never" style="margin-bottom: 16px">
+          <template #header><span class="card-title">制度问答</span></template>
+          <el-input
+            v-model="askQuestion"
+            placeholder="用自然语言提问，如 外出需要提前报备吗"
+            clearable
+            @keyup.enter="handleAsk"
+          >
+            <template #append>
+              <el-button :loading="asking" @click="handleAsk">提问</el-button>
+            </template>
+          </el-input>
+          <div v-if="answer" class="answer">
+            <div class="answer-head">
+              <el-tag :type="answer.answered ? 'success' : 'info'" size="small">
+                {{ answer.answered ? '已依据制度作答' : '未找到依据' }}
+              </el-tag>
+            </div>
+            <div class="answer-text">{{ answer.text }}</div>
+            <div v-if="answer.citations && answer.citations.length" class="answer-cites">
+              <div class="answer-cites-title">依据条款（{{ answer.citations.length }}）</div>
+              <div v-for="c in answer.citations" :key="c.clauseId" class="cite">
+                <span class="cite-code">{{ c.clauseCode }}</span>
+                <span class="cite-doc">{{ c.docTitle }} {{ c.docVersion }}</span>
+                <span class="cite-score">相似度 {{ (c.score ?? 0).toFixed(3) }}</span>
+                <div class="cite-content">{{ c.content }}</div>
+              </div>
+            </div>
+          </div>
+        </el-card>
+
+        <el-card shadow="never">
           <template #header><span class="card-title">条款检索</span></template>
+
           <el-input
             v-model="searchQuery"
             placeholder="用自然语言描述要找的规定，如 外出需要提前报备吗"
@@ -130,13 +162,17 @@ import {
   getPolicyClauses,
   deletePolicyDocument,
   reindexPolicyDocument,
-  searchPolicyClauses
+  searchPolicyClauses,
+  askPolicyClause
 } from '@/api/policy'
 
 const documents = ref([])
 const listLoading = ref(false)
 const uploading = ref(false)
 const searching = ref(false)
+const asking = ref(false)
+const askQuestion = ref('')
+const answer = ref(null)
 const clauseLoading = ref(false)
 
 const form = reactive(blank())
@@ -249,6 +285,23 @@ async function handleSearch() {
   }
 }
 
+async function handleAsk() {
+  if (!askQuestion.value.trim()) {
+    ElMessage.warning('请输入问题')
+    return
+  }
+  asking.value = true
+  try {
+    const res = await askPolicyClause(askQuestion.value.trim(), 5)
+    answer.value = res.data
+  } catch {
+    // 失败原因已由 request 拦截器提示；保留上一次结果没有意义
+    answer.value = null
+  } finally {
+    asking.value = false
+  }
+}
+
 function formatTime(t) {
   return t ? String(t).replace('T', ' ').slice(0, 19) : '-'
 }
@@ -267,6 +320,55 @@ onMounted(loadDocuments)
 }
 .search-result {
   margin-top: 12px;
+}
+.answer {
+  margin-top: 12px;
+}
+.answer-head {
+  margin-bottom: 6px;
+}
+.answer-text {
+  font-size: 13px;
+  line-height: 1.7;
+  color: #303133;
+  white-space: pre-wrap;
+}
+.answer-cites {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed #ebeef5;
+}
+.answer-cites-title {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 6px;
+}
+.cite {
+  border-left: 3px solid #409eff;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  background: #f5f7fa;
+}
+.cite-code {
+  font-weight: 600;
+  font-size: 12px;
+  color: #409eff;
+  margin-right: 8px;
+}
+.cite-doc {
+  font-size: 12px;
+  color: #606266;
+  margin-right: 8px;
+}
+.cite-score {
+  font-size: 12px;
+  color: #909399;
+}
+.cite-content {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #303133;
 }
 .empty {
   color: #909399;

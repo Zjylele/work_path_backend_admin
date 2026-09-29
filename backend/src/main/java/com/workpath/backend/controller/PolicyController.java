@@ -1,9 +1,11 @@
 package com.workpath.backend.controller;
 
 import com.workpath.backend.common.Result;
+import com.workpath.backend.dto.PolicyAskDTO;
 import com.workpath.backend.dto.PolicyUploadDTO;
 import com.workpath.backend.entity.PolicyClause;
 import com.workpath.backend.entity.PolicyDocument;
+import com.workpath.backend.service.ClauseQaService;
 import com.workpath.backend.service.PolicyClauseService;
 import com.workpath.backend.service.PolicyDocumentService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import jakarta.validation.Valid;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +40,7 @@ public class PolicyController {
 
     private final PolicyDocumentService documentService;
     private final PolicyClauseService clauseService;
+    private final ClauseQaService clauseQaService;
 
     @Operation(summary = "上传制度文档（自动切分条款并向量化）")
     @PostMapping("/documents")
@@ -84,5 +88,11 @@ public class PolicyController {
             @RequestParam String query,
             @RequestParam(required = false) Integer topK) {
         return Result.success(clauseService.search(query, topK));
+    }
+
+    @Operation(summary = "制度条款问答（RAG：检索条款后交由 CHAT 模型作答）")
+    @PostMapping("/clauses/ask")
+    public Result<ClauseQaService.Answer> ask(@Valid @RequestBody PolicyAskDTO dto) {
+        return Result.success(clauseQaService.ask(dto.getQuestion(), dto.getTopK()));
     }
 }
