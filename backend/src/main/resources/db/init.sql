@@ -68,7 +68,9 @@ CREATE TABLE IF NOT EXISTS `operation_log` (
   `user_id`     BIGINT      DEFAULT NULL COMMENT '操作人用户ID（登录失败时为 NULL）',
   `username`    VARCHAR(50) DEFAULT NULL COMMENT '操作人用户名（快照）',
   `action`      VARCHAR(30) NOT NULL COMMENT '动作码：LOGIN_SUCCESS/LOGIN_FAIL/LOGOUT/USER_DISABLE/USER_ENABLE/USER_DELETE/PASSWORD_RESET/ROLE_GRANT/ROLE_REVOKE/TRACK_DELETE',
-  `target_type` VARCHAR(20) DEFAULT NULL COMMENT '目标类型：USER/TRACK',
+  -- 目标类型：USER/TRACK 等短码，也可放表名（M6 的 model_provider_config 有 21 字符，
+  -- 早期用 VARCHAR(20) 会越界且被 record() 的 catch 吞掉，导致审计日志静默丢失）
+  `target_type` VARCHAR(30) DEFAULT NULL COMMENT '目标类型：USER/TRACK/MODEL_CONFIG',
   `target_id`   BIGINT      DEFAULT NULL COMMENT '目标ID',
   `target_name` VARCHAR(100) DEFAULT NULL COMMENT '目标名称快照',
   `detail`      VARCHAR(255) DEFAULT NULL COMMENT '补充描述',

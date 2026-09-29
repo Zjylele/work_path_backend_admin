@@ -213,3 +213,33 @@ DROP PROCEDURE IF EXISTS add_track_analysis_status_idx;
 -- confirm_status=0 是「AI 结论以疑似、待人工复核形式输出」这个定位在数据模型
 -- 上的落点——没有它，AI 结论就直接变成管理依据了，与论文强调的「管理辅助工具」
 -- 定位直接冲突。
+
+-- ------------------------------------------------------------
+-- 6. M6 收尾：operation_log.target_type 扩列
+--
+-- 根因：ModelProviderService 把 target_type 写成 "model_provider_config"（21 字符），
+-- 而 init.sql 里该列是 VARCHAR(20)，越界一字符。
+-- 更糟的是 OperationLogService.record() 外层 catch 吞掉 SQLException，
+-- 于是这段审计日志静默丢失——页面提示成功、配置也落库，只有 operation_log 查不到记录。
+--
+-- 选取扩列而不是把字符串改短：target_type 作为通用审计字段本来就可能写表名，
+-- VARCHAR(30) 能容纳本库现有最长表名；改短字符串只治这一次，下次照旧越界。
+-- 已有数据不会有长度 >30 的 target_type（列宽 20 摆在那），所以扩列无截断风险。
+-- ------------------------------------------------------------
+DROP PROCEDURE IF EXISTS widen_operation_log_target_type;
+DELIMITER $$
+CREATE PROCEDURE widen_operation_log_target_type()
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'operation_log'
+               AND COLUMN_NAME = 'target_type'
+               AND CHARACTER_MAXIMUM_LENGTH < 30) THEN
+    ALTER TABLE `operation_log`
+      MODIFY COLUMN `target_type` VARCHAR(30) DEFAULT NULL
+      COMMENT '目标类型：USER/TRACK/MODEL_CONFIG';
+  END IF;
+END$$
+DELIMITER ;
+CALL widen_operation_log_target_type();
+DROP PROCEDURE IF EXISTS widen_operation_log_target_type;
