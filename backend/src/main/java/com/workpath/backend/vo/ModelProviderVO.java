@@ -38,6 +38,9 @@ public class ModelProviderVO {
     @Schema(description = "是否启用")
     private Integer enabled;
 
+    @Schema(description = "是否该用途当前使用的配置：1=是")
+    private Integer selected;
+
     @Schema(description = "连通性：0=未验证，1=通过，2=失败")
     private Integer status;
 

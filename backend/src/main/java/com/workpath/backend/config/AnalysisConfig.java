@@ -1,7 +1,9 @@
 package com.workpath.backend.config;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.workpath.backend.entity.ModelProviderConfig;
 import com.workpath.backend.mapper.ModelProviderConfigMapper;
+import com.workpath.backend.service.ModelProviderService;
 import com.workpath.backend.service.analyze.StayPointDetector;
 import com.workpath.backend.service.modelProvider.GeoClient;
 import org.springframework.context.annotation.Bean;
@@ -31,8 +33,16 @@ public class AnalysisConfig {
 
     @Bean
     public GeoClient geoClient(ModelProviderConfigMapper configMapper) {
-        ModelProviderConfig cfg = configMapper.selectByPurpose(
-                com.workpath.backend.service.ModelProviderService.PURPOSE_GEO);
+        // 一用途多模型后，取该用途 selected=1 的行；存量库没有选中行时
+        // 退回该用途 id 最小的一条（与 ModelProviderService.requireConfig 的自愈同口径）
+        ModelProviderConfig cfg = configMapper.selectSelectedByPurpose(
+                ModelProviderService.PURPOSE_GEO);
+        if (cfg == null) {
+            cfg = configMapper.selectList(new LambdaQueryWrapper<ModelProviderConfig>()
+                            .eq(ModelProviderConfig::getPurpose, ModelProviderService.PURPOSE_GEO)
+                            .orderByAsc(ModelProviderConfig::getId))
+                    .stream().findFirst().orElse(null);
+        }
         if (cfg == null) {
             // 没配 GEO 不阻塞启动：POI 是可选增强，poi_name 留空即可。
             // 返回一个未配置的 GeoClient，它的所有调用都会返回 empty

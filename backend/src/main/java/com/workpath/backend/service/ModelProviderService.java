@@ -1,5 +1,6 @@
 package com.workpath.backend.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.io.IOException;
@@ -84,113 +86,167 @@ public class ModelProviderService {
     }
 
     /**
-     * 按用途查配置（脱敏）。仅超级管理员可读。
-     */
-    public ModelProviderVO getByPurpose(String purpose) {
-        currentOperator();
-        return toVO(requireConfig(normalizePurpose(purpose)));
-    }
-
-    /**
-     * 保存或更新。按 purpose 幂等：已存在则更新，不存在则插入。
+     * 新增一条模型配置。某用途的第一条配置自动成为该用途的「当前使用」——
+     * 否则添加完还得再点一次切换，多一步无意义的操作。
      *
-     * @param dto      入参，apiKey 为空串表示不改密钥
-     * @param operator 操作人信息，用于审计
+     * @return 新配置的 id
      */
-    public void save(ModelProviderSaveDTO dto) {
+    public Long create(ModelProviderSaveDTO dto) {
         Operator operator = currentOperator();
         String purpose = normalizePurpose(dto.getPurpose());
         requireText(dto.getProviderName(), "服务商不能为空");
         requireText(dto.getBaseUrl(), "接口地址不能为空");
         requireText(dto.getModelName(), "模型标识不能为空");
+        // 新增时密钥必填，否则存进去一条连不上的配置
+        requireText(dto.getApiKey(), "密钥不能为空");
 
-        ModelProviderConfig exist = configMapper.selectByPurpose(purpose);
-        String newKey = dto.getApiKey();
+        ModelProviderConfig c = new ModelProviderConfig();
+        BeanUtils.copyProperties(dto, c);
+        c.setPurpose(purpose);
+        c.setStatus(0);
+        c.setEnabled(dto.getEnabled() == null ? 1 : dto.getEnabled());
+        c.setSelected(countByPurpose(purpose) == 0 ? 1 : 0);
+        configMapper.insert(c);
 
-        if (exist == null) {
-            // 新增时密钥必填，否则存进去一条连不上的配置
-            requireText(newKey, "密钥不能为空");
-            ModelProviderConfig c = new ModelProviderConfig();
-            BeanUtils.copyProperties(dto, c);
-            c.setPurpose(purpose);
-            c.setStatus(0);
-            c.setEnabled(dto.getEnabled() == null ? 1 : dto.getEnabled());
-            configMapper.insert(c);
-        } else {
-            LambdaUpdateWrapper<ModelProviderConfig> uw = new LambdaUpdateWrapper<>();
-            uw.set(ModelProviderConfig::getProviderName, dto.getProviderName())
-                    .set(ModelProviderConfig::getBaseUrl, dto.getBaseUrl())
-                    .set(ModelProviderConfig::getModelName, dto.getModelName())
-                    .set(ModelProviderConfig::getExtraConfig, dto.getExtraConfig())
-                    .set(ModelProviderConfig::getEnabled, dto.getEnabled() == null ? 1 : dto.getEnabled())
-                    .eq(ModelProviderConfig::getId, exist.getId());
-            // 只有真给了新密钥才更新密钥列
-            if (StringUtils.hasText(newKey)) {
-                uw.set(ModelProviderConfig::getApiKey, newKey.trim());
-                // 密钥变了，之前的连通性结论作废
-                uw.set(ModelProviderConfig::getStatus, 0);
-                uw.set(ModelProviderConfig::getLastError, null);
-            }
-            configMapper.update(null, uw);
-        }
-
-        // 记录谁在什么时候改了哪个用途的配置。detail 只写用途与操作类型，不写密钥。
         operationLogService.record(
-                operator.userId(), operator.username(), "MODEL_PROVIDER_SAVE",
-                "model_provider_config", exist == null ? null : exist.getId(),
-                purpose, "用途=" + purpose + "，服务商=" + dto.getProviderName(), true);
+                operator.userId(), operator.username(), "MODEL_PROVIDER_CREATE",
+                "model_provider_config", c.getId(),
+                purpose, "用途=" + purpose + "，服务商=" + dto.getProviderName()
+                        + "，模型=" + dto.getModelName(), true);
+        return c.getId();
     }
 
     /**
-     * 连接测试：按传入参数真调一次接口，把结果写回 status/last_error。
+     * 更新模型配置（按 id）。模型类型是这条配置的身份，不允许改——
+     * 要换类型就新增一条。密钥空串表示保持原值。
+     */
+    public void update(Long id, ModelProviderSaveDTO dto) {
+        Operator operator = currentOperator();
+        ModelProviderConfig row = requireRow(id);
+        requireText(dto.getProviderName(), "服务商不能为空");
+        requireText(dto.getBaseUrl(), "接口地址不能为空");
+        requireText(dto.getModelName(), "模型标识不能为空");
+
+        LambdaUpdateWrapper<ModelProviderConfig> uw = new LambdaUpdateWrapper<>();
+        uw.set(ModelProviderConfig::getProviderName, dto.getProviderName())
+                .set(ModelProviderConfig::getBaseUrl, dto.getBaseUrl())
+                .set(ModelProviderConfig::getModelName, dto.getModelName())
+                .set(ModelProviderConfig::getExtraConfig, dto.getExtraConfig())
+                .set(ModelProviderConfig::getEnabled, dto.getEnabled() == null ? 1 : dto.getEnabled())
+                .eq(ModelProviderConfig::getId, id);
+        // 只有真给了新密钥才更新密钥列
+        if (StringUtils.hasText(dto.getApiKey())) {
+            uw.set(ModelProviderConfig::getApiKey, dto.getApiKey().trim());
+            // 密钥变了，之前的连通性结论作废
+            uw.set(ModelProviderConfig::getStatus, 0);
+            uw.set(ModelProviderConfig::getLastError, null);
+        }
+        configMapper.update(null, uw);
+
+        operationLogService.record(
+                operator.userId(), operator.username(), "MODEL_PROVIDER_UPDATE",
+                "model_provider_config", id,
+                row.getPurpose(), "用途=" + row.getPurpose() + "，服务商=" + dto.getProviderName(), true);
+    }
+
+    /**
+     * 切换某用途的「当前使用」模型。事务内先清后置：
+     * 先把该用途全部行的 selected 清零，再置目标行——
+     * 任一时刻每个用途至多一条 selected=1 由这一顺序保证。
+     */
+    @Transactional
+    public void select(Long id) {
+        Operator operator = currentOperator();
+        ModelProviderConfig row = requireRow(id);
+        configMapper.update(null, new LambdaUpdateWrapper<ModelProviderConfig>()
+                .eq(ModelProviderConfig::getPurpose, row.getPurpose())
+                .set(ModelProviderConfig::getSelected, 0));
+        ModelProviderConfig patch = new ModelProviderConfig();
+        patch.setId(id);
+        patch.setSelected(1);
+        configMapper.updateById(patch);
+
+        operationLogService.record(
+                operator.userId(), operator.username(), "MODEL_PROVIDER_SELECT",
+                "model_provider_config", id,
+                row.getPurpose(), "用途=" + row.getPurpose() + "，当前模型=" + row.getModelName(), true);
+    }
+
+    /**
+     * 删除模型。当前使用中的配置若有同用途替代品，必须先切换再删——
+     * 直接删会让该用途失去生效配置，语言标注、条款检索这些链路全部中断；
+     * 若是唯一一条则允许删（管理员明确知道自己在停用整条链路）。
+     */
+    @Transactional
+    public void delete(Long id) {
+        Operator operator = currentOperator();
+        ModelProviderConfig row = requireRow(id);
+        if (row.getSelected() != null && row.getSelected() == 1
+                && countByPurpose(row.getPurpose()) > 1) {
+            throw new BusinessException(ResultCode.CONFLICT.getCode(),
+                    "该模型是当前使用中的配置，请先切换到其他模型再删除");
+        }
+        configMapper.deleteById(id);
+
+        operationLogService.record(
+                operator.userId(), operator.username(), "MODEL_PROVIDER_DELETE",
+                "model_provider_config", id,
+                row.getPurpose(), "用途=" + row.getPurpose() + "，模型=" + row.getModelName(), true);
+    }
+
+    /**
+     * 连接测试（按配置 id）：以库里这条配置为基准，允许入参覆盖部分字段
+     * （编辑表单里测「改了还没存」的值），结果写回该行的 status/last_error。
      *
-     * <p>这一步刻意不落库密钥以外的字段——测试失败不该影响已保存的配置。</p>
+     * <p>密钥覆盖为空时用库里的密钥：页面出于安全不回传完整密钥，
+     * 若直接把空串发给服务商，只会得到一个误导人的 401。</p>
      *
-     * @param purpose 用途
-     * @param dto     待测试的连接参数（含密钥，可直接是前端刚填未保存的值）
      * @return 失败原因；成功返回 null
      */
-    public String testConnection(String purpose, ModelProviderSaveDTO dto) {
+    public String testById(Long id, ModelProviderSaveDTO override) {
         Operator operator = currentOperator();
+        ModelProviderConfig row = requireRow(id);
+
+        ModelProviderSaveDTO effective = new ModelProviderSaveDTO();
+        effective.setPurpose(row.getPurpose());
+        if (override != null) {
+            effective.setBaseUrl(override.getBaseUrl());
+            effective.setModelName(override.getModelName());
+            effective.setExtraConfig(override.getExtraConfig());
+            effective.setApiKey(override.getApiKey());
+        }
+        if (!StringUtils.hasText(effective.getBaseUrl())) {
+            effective.setBaseUrl(row.getBaseUrl());
+        }
+        if (!StringUtils.hasText(effective.getModelName())) {
+            effective.setModelName(row.getModelName());
+        }
+        if (!StringUtils.hasText(effective.getExtraConfig())) {
+            effective.setExtraConfig(row.getExtraConfig());
+        }
+        if (!StringUtils.hasText(effective.getApiKey())) {
+            effective.setApiKey(row.getApiKey());
+        }
+
         String err;
         try {
-            // 密钥留空时回退到已保存的密钥：页面出于安全不回传完整密钥，
-            // 若直接把空串发给服务商，只会得到一个误导人的 401
-            // （"Token is invalid" 听起来像 Key 配错，其实是根本没传）。
-            if (!StringUtils.hasText(dto.getApiKey())) {
-                ModelProviderConfig saved = configMapper.selectByPurpose(normalizePurpose(purpose));
-                if (saved != null && StringUtils.hasText(saved.getApiKey())) {
-                    dto.setApiKey(saved.getApiKey());
-                } else {
-                    return "密钥为空。请填写接口密钥，或先保存一条配置再测试";
-                }
-            }
-            err = doTest(normalizePurpose(purpose), dto);
+            err = doTest(row.getPurpose(), effective);
         } catch (Exception e) {
             // 异常信息可能带上完整 URL，只取类型与简短消息，避免密钥随日志外泄
             err = e.getClass().getSimpleName();
-            log.warn("模型连接测试异常 purpose={}", purpose, e);
+            log.warn("模型连接测试异常 id={} purpose={}", id, row.getPurpose(), e);
         }
 
-        ModelProviderConfig exist = configMapper.selectByPurpose(normalizePurpose(purpose));
-        LambdaUpdateWrapper<ModelProviderConfig> uw = new LambdaUpdateWrapper<>();
-        if (exist != null) {
-            uw.eq(ModelProviderConfig::getId, exist.getId());
-        } else {
-            uw.eq(ModelProviderConfig::getPurpose, normalizePurpose(purpose));
-        }
-        uw.set(ModelProviderConfig::getStatus, err == null ? 1 : 2)
-                .set(ModelProviderConfig::getLastError, err);
-
-        if (exist != null) {
-            configMapper.update(null, uw);
-        }
-        // 配置可能还没保存，此时只把结论返回给前端，不落库
+        ModelProviderConfig patch = new ModelProviderConfig();
+        patch.setId(id);
+        patch.setStatus(err == null ? 1 : 2);
+        patch.setLastError(err);
+        configMapper.updateById(patch);
 
         operationLogService.record(
                 operator.userId(), operator.username(), "MODEL_PROVIDER_TEST",
-                "model_provider_config", exist == null ? null : exist.getId(),
-                purpose, "用途=" + purpose + "，结果=" + (err == null ? "通过" : "失败"), true);
+                "model_provider_config", id,
+                row.getPurpose(), "用途=" + row.getPurpose() + "，结果=" + (err == null ? "通过" : "失败"), true);
 
         return err;
     }
@@ -392,15 +448,54 @@ public class ModelProviderService {
     }
 
     /**
-     * 取某个用途的完整配置。调用方是服务端内部逻辑（如真正发模型请求），
+     * 取某个用途「当前使用」的完整配置。调用方是服务端内部逻辑（如真正发模型请求），
      * 不走 Controller，因此允许拿到完整密钥。
+     *
+     * <p>自愈兜底：迁移前的存量库可能没有任何 selected=1 行。此时选中该用途
+     * id 最小的启用行并落库，之后正常命中——行为与旧版「每用途一条」无缝衔接，
+     * 也经受得起有人手工改库把 selected 清零的折腾。</p>
      */
     public ModelProviderConfig requireConfig(String purpose) {
-        ModelProviderConfig c = configMapper.selectByPurpose(normalizePurpose(purpose));
-        if (c == null) {
-            throw new BusinessException(ResultCode.ERROR.getCode(), "尚未配置「" + purpose + "」的模型接入");
+        String p = normalizePurpose(purpose);
+        ModelProviderConfig c = configMapper.selectSelectedByPurpose(p);
+        if (c != null) {
+            return c;
         }
-        return c;
+        List<ModelProviderConfig> candidates = configMapper.selectList(
+                new LambdaQueryWrapper<ModelProviderConfig>()
+                        .eq(ModelProviderConfig::getPurpose, p)
+                        .orderByAsc(ModelProviderConfig::getId));
+        if (candidates.isEmpty()) {
+            throw new BusinessException(ResultCode.ERROR.getCode(), "尚未配置「" + p + "」的模型接入");
+        }
+        // 优先启用中的行；全停用时退而求其次，让配置页能看到明确的测试失败，
+        // 而不是业务侧报「尚未配置」却查不到原因
+        ModelProviderConfig first = candidates.stream()
+                .filter(x -> x.getEnabled() == null || x.getEnabled() == 1)
+                .findFirst()
+                .orElse(candidates.get(0));
+        ModelProviderConfig patch = new ModelProviderConfig();
+        patch.setId(first.getId());
+        patch.setSelected(1);
+        configMapper.updateById(patch);
+        first.setSelected(1);
+        return first;
+    }
+
+    /** 按 id 取配置，取不到抛 404。 */
+    private ModelProviderConfig requireRow(Long id) {
+        ModelProviderConfig row = id == null ? null : configMapper.selectById(id);
+        if (row == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "模型配置不存在");
+        }
+        return row;
+    }
+
+    /** 某用途下的配置条数（判空包装，mock 环境可能返回 null）。 */
+    private long countByPurpose(String purpose) {
+        Long n = configMapper.selectCount(new LambdaQueryWrapper<ModelProviderConfig>()
+                .eq(ModelProviderConfig::getPurpose, purpose));
+        return n == null ? 0 : n;
     }
 
     private ModelProviderVO toVO(ModelProviderConfig c) {

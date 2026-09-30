@@ -243,3 +243,53 @@ END$$
 DELIMITER ;
 CALL widen_operation_log_target_type();
 DROP PROCEDURE IF EXISTS widen_operation_log_target_type;
+
+-- ------------------------------------------------------------
+-- 7. M5 配套：model_provider_config 支持一用途多模型
+--
+-- 原表 uk_purpose 唯一键把「每个用途只有一条配置」焊死，无法做到
+-- 「添加多个模型、按用途切换当前使用」。改造分三步，全部幂等：
+--   1) 唯一键降级为普通索引（允许同用途多行）；
+--   2) 加 selected 标记列（1=该用途当前生效的配置）；
+--   3) 存量行每用途选 id 最小的一行置为当前使用。
+-- 唯一性由 Service 层保证：切换在事务内先清后置；requireConfig 发现
+-- 某用途没有 selected 行时自愈（自动选中 id 最小的启用行）。
+-- ------------------------------------------------------------
+DROP PROCEDURE IF EXISTS multipurpose_model_provider;
+DELIMITER $$
+CREATE PROCEDURE multipurpose_model_provider()
+BEGIN
+  -- 1) 唯一键 uk_purpose 若存在则降级为普通索引
+  IF EXISTS (
+    SELECT 1 FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'model_provider_config'
+      AND INDEX_NAME = 'uk_purpose'
+  ) THEN
+    ALTER TABLE `model_provider_config` DROP INDEX `uk_purpose`;
+    ALTER TABLE `model_provider_config` ADD INDEX `idx_purpose` (`purpose`);
+  END IF;
+
+  -- 2) selected 列
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'model_provider_config'
+      AND COLUMN_NAME = 'selected'
+  ) THEN
+    ALTER TABLE `model_provider_config`
+      ADD COLUMN `selected` TINYINT NOT NULL DEFAULT 0
+      COMMENT '是否当前使用：1=该用途当前生效的配置' AFTER `enabled`;
+  END IF;
+
+  -- 3) 存量数据自愈：每用途尚无 selected 行时，选中 id 最小的一行
+  UPDATE `model_provider_config` m
+    LEFT JOIN `model_provider_config` s
+      ON s.purpose = m.purpose AND s.selected = 1
+    SET m.selected = 1
+    WHERE s.id IS NULL
+      AND m.id = (SELECT MIN(id) FROM
+        (SELECT id, purpose FROM model_provider_config) x
+        WHERE x.purpose = m.purpose);
+END$$
+DELIMITER ;
+CALL multipurpose_model_provider();
+DROP PROCEDURE IF EXISTS multipurpose_model_provider;

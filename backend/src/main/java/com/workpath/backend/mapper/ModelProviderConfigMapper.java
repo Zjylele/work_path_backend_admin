@@ -10,9 +10,9 @@ import org.apache.ibatis.annotations.Select;
 public interface ModelProviderConfigMapper extends BaseMapper<ModelProviderConfig> {
 
     /**
-     * 按用途查单条配置。purpose 上有唯一键，理论上最多一条。
-     * 用 LIMIT 1 兜底，避免历史脏数据导致 TooManyResults。
+     * 查某用途「当前使用」的配置（selected=1）。每用途可挂多条配置，
+     * 选中的至多一条；LIMIT 1 兜底历史脏数据，避免 TooManyResults。
      */
-    @Select("SELECT * FROM model_provider_config WHERE purpose = #{purpose} LIMIT 1")
-    ModelProviderConfig selectByPurpose(@Param("purpose") String purpose);
+    @Select("SELECT * FROM model_provider_config WHERE purpose = #{purpose} AND selected = 1 LIMIT 1")
+    ModelProviderConfig selectSelectedByPurpose(@Param("purpose") String purpose);
 }
