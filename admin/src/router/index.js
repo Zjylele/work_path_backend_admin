@@ -57,6 +57,18 @@ const routes = [
         meta: { title: '工作事件复核', icon: 'Calendar' }
       },
       {
+        path: 'rules',
+        name: 'RuleList',
+        component: () => import('@/views/rule/index.vue'),
+        meta: { title: '合规规则', icon: 'SetUp' }
+      },
+      {
+        path: 'orders',
+        name: 'OrderList',
+        component: () => import('@/views/order/index.vue'),
+        meta: { title: '整改工单', icon: 'Tickets' }
+      },
+      {
         path: 'model-providers',
         name: 'ModelProviderConfig',
         component: () => import('@/views/modelProvider/index.vue'),

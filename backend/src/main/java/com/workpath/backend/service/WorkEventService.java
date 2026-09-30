@@ -1,6 +1,7 @@
 package com.workpath.backend.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.workpath.backend.common.BusinessException;
 import com.workpath.backend.common.ResultCode;
 import com.workpath.backend.entity.Track;
@@ -9,6 +10,7 @@ import com.workpath.backend.interceptor.UserContext;
 import com.workpath.backend.mapper.TrackMapper;
 import com.workpath.backend.mapper.UserMapper;
 import com.workpath.backend.mapper.WorkEventMapper;
+import com.workpath.backend.vo.PageVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -35,21 +37,27 @@ public class WorkEventService {
     private final WorkEventMapper workEventMapper;
     private final TrackMapper trackMapper;
     private final UserMapper userMapper;
+    private final ComplianceService complianceService;
 
     /**
-     * 工作事件列表。
+     * 工作事件分页列表。
+     *
+     * <p>事件量随轨迹持续增长（每条轨迹产出 1-3 个事件），一次性全量返回
+     * 在演示库尚可、在真实数据规模下不可持续，分页是表格展示的常规配置。</p>
      *
      * @param confirmStatus 复核状态筛选；null 表示全部
      */
-    public List<WorkEvent> list(Integer confirmStatus) {
+    public PageVO<WorkEvent> list(Integer confirmStatus, Integer page, Integer pageSize) {
         LambdaQueryWrapper<WorkEvent> q = new LambdaQueryWrapper<>();
         if (confirmStatus != null) {
             q.eq(WorkEvent::getConfirmStatus, confirmStatus);
         }
         q.orderByDesc(WorkEvent::getStartTime);
-        List<WorkEvent> events = workEventMapper.selectList(q);
+        Page<WorkEvent> result = workEventMapper.selectPage(
+                new Page<>(normalize(page, 1), normalize(pageSize, 10)), q);
 
-        // 员工用户名逐个查会 N+1。事件量在百级，一次批量查完再组装
+        // 员工用户名逐个查会 N+1。每页至多几十条，一次批量查完再组装
+        List<WorkEvent> events = result.getRecords();
         if (!events.isEmpty()) {
             List<Long> userIds = events.stream().map(WorkEvent::getUserId).distinct().toList();
             Map<Long, String> names = userMapper.selectBatchIds(userIds).stream()
@@ -57,7 +65,12 @@ public class WorkEventService {
                             com.workpath.backend.entity.User::getUsername, (a, b) -> a));
             events.forEach(e -> e.setUsername(names.get(e.getUserId())));
         }
-        return events;
+        return PageVO.of(result);
+    }
+
+    /** 分页参数兜底：null 或非正数回落默认值，防止 Page 构造抛异常。 */
+    private static long normalize(Integer value, int fallback) {
+        return (value == null || value <= 0) ? fallback : value;
     }
 
     /** 事件详情。 */
@@ -88,6 +101,15 @@ public class WorkEventService {
         patch.setConfirmBy(UserContext.getUserId());
         patch.setConfirmTime(java.time.LocalDateTime.now());
         workEventMapper.updateById(patch);
+
+        // M5 入口：确认即触发合规核查（联调链「管理员确认 → 规则命中」）。
+        // 核查链路（含 LLM）的失败不能让确认请求失败——确认动作本身已成功，
+        // 核查问题留给日志与 result=2 的待复核结论。
+        try {
+            complianceService.onEventConfirmed(event);
+        } catch (Exception e) {
+            log.error("合规核查失败 eventId={} : {}", eventId, e.getMessage(), e);
+        }
 
         log.info("工作事件已确认 eventId={} 原状态={} 复核人={}",
                 eventId, event.getConfirmStatus(), UserContext.getUserId());

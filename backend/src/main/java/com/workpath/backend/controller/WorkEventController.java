@@ -3,6 +3,7 @@ package com.workpath.backend.controller;
 import com.workpath.backend.common.Result;
 import com.workpath.backend.entity.WorkEvent;
 import com.workpath.backend.service.WorkEventService;
+import com.workpath.backend.vo.PageVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -12,8 +13,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
 
 /**
  * 工作事件（M4 产出的人工复核入口）。
@@ -29,11 +28,13 @@ public class WorkEventController {
 
     private final WorkEventService workEventService;
 
-    @Operation(summary = "工作事件列表")
+    @Operation(summary = "工作事件列表（分页）")
     @GetMapping
-    public Result<List<WorkEvent>> list(
+    public Result<PageVO<WorkEvent>> list(
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "10") Integer pageSize,
             @RequestParam(required = false) Integer confirmStatus) {
-        return Result.success(workEventService.list(confirmStatus));
+        return Result.success(workEventService.list(confirmStatus, page, pageSize));
     }
 
     @Operation(summary = "工作事件详情")
