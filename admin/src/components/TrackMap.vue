@@ -22,12 +22,17 @@ let markers = []
 
 // 加载高德 JS API
 async function loadMap() {
+  // 安全密钥必须在 load() 之前挂到 window._AMapSecurityConfig——jsapi-loader 1.0.x
+  // 并不认识 loadOptions.securityJsCode，传了会被静默忽略；没有它 2.0 的服务鉴权
+  // 全部失败，症状是矢量覆盖层正常、底图瓦片全灰（实测踩过）。
+  if (AMAP_SECURITY_CODE) {
+    window._AMapSecurityConfig = { securityJsCode: AMAP_SECURITY_CODE }
+  }
   await AMapLoader.load({
     key: AMAP_KEY,
     version: '2.0',
     plugins: ['AMap.Scale', 'AMap.ToolBar'],
-    AMapUI: false,
-    securityJsCode: AMAP_SECURITY_CODE
+    AMapUI: false
   })
 }
 

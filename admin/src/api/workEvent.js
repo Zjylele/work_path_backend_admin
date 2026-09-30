@@ -1,8 +1,8 @@
 import request from '@/utils/request'
 
 // 工作事件（M4 产出的人工复核）
-export function getWorkEvents(confirmStatus) {
-  return request.get('/admin/work-events', { params: { confirmStatus } })
+export function getWorkEvents(confirmStatus, page = 1, pageSize = 10) {
+  return request.get('/admin/work-events', { params: { confirmStatus, page, pageSize } })
 }
 export function getWorkEvent(id) {
   return request.get(`/admin/work-events/${id}`)

@@ -10,7 +10,7 @@
 
     <el-card shadow="never">
       <div class="toolbar">
-        <el-select v-model="confirmStatus" placeholder="复核状态" clearable style="width: 160px" @change="load">
+        <el-select v-model="confirmStatus" placeholder="复核状态" clearable style="width: 160px" @change="handleFilterChange">
           <el-option label="待确认" :value="0" />
           <el-option label="已确认" :value="1" />
           <el-option label="已驳回" :value="2" />
@@ -75,6 +75,18 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <!-- 分页 -->
+      <el-pagination
+        class="pagination"
+        layout="total, sizes, prev, pager, next, jumper"
+        :total="total"
+        :current-page="page"
+        :page-size="pageSize"
+        :page-sizes="[10, 20, 50]"
+        @current-change="handlePageChange"
+        @size-change="handleSizeChange"
+      />
     </el-card>
 
     <el-dialog v-model="reasonVisible" title="AI 判定理由" width="520px">
@@ -97,17 +109,42 @@ import {
 const loading = ref(false)
 const events = ref([])
 const confirmStatus = ref(0)
+const total = ref(0)
+const page = ref(1)
+const pageSize = ref(10)
 const reasonVisible = ref(false)
 const current = reactive({ aiReason: '' })
 
 async function load() {
   loading.value = true
   try {
-    const res = await getWorkEvents(confirmStatus.value === '' ? null : confirmStatus.value)
-    events.value = res.data || []
+    const res = await getWorkEvents(
+      confirmStatus.value === '' ? null : confirmStatus.value,
+      page.value,
+      pageSize.value
+    )
+    // 管理端分页字段是 list 不是 records（后端 PageVO）
+    events.value = res.data.list || []
+    total.value = res.data.total || 0
   } finally {
     loading.value = false
   }
+}
+
+function handleFilterChange() {
+  page.value = 1
+  load()
+}
+
+function handlePageChange(p) {
+  page.value = p
+  load()
+}
+
+function handleSizeChange(s) {
+  pageSize.value = s
+  page.value = 1
+  load()
 }
 
 function showReason(row) {
@@ -167,6 +204,10 @@ onMounted(load)
   display: flex;
   gap: 12px;
   margin-bottom: 16px;
+}
+.pagination {
+  margin-top: 16px;
+  justify-content: flex-end;
 }
 .confidence {
   font-size: 12px;
