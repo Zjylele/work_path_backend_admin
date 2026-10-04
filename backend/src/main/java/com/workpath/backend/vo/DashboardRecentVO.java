@@ -27,10 +27,11 @@ public class DashboardRecentVO {
 
     private List<RecentDocument> recentDocuments;
 
-    /** 最近新增轨迹条目。轨迹没有名称字段，展示名由前端按「{username}的轨迹 #{id}」组合。 */
+    /** 最近新增轨迹条目。展示名由前端按「{username}的轨迹（{name}）」组合，name 为空显示「未命名」。 */
     @Data
     public static class RecentTrack {
         private Long id;
+        private String name;
         private String username;
         private LocalDateTime startTime;
         private LocalDateTime createTime;

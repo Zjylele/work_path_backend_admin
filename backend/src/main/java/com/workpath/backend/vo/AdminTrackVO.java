@@ -9,6 +9,8 @@ public class AdminTrackVO {
 
     private Long id;
 
+    private String name;
+
     private String username;
 
     private Long userId;

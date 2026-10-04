@@ -13,6 +13,9 @@
 
       <div v-loading="loading">
         <el-descriptions :column="3" border v-if="detail">
+          <el-descriptions-item label="名称">
+            {{ detail.name || '未命名' }}
+          </el-descriptions-item>
           <el-descriptions-item label="所属用户">
             {{ detail.username }}
           </el-descriptions-item>

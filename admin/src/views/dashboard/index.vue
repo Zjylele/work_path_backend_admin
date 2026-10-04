@@ -96,10 +96,6 @@ const cards = computed(() => [
   }
 ])
 
-// 「操作详情最多展示 10 个字」是展示层规则：后端返回完整 detail，
-// 这里截断 + 悬浮显示全文（截断后的数据没法还原，所以不在数据层做）
-const LOG_DETAIL_MAX = 10
-
 // 日志 detail 为空时的兜底展示，与操作日志页的动作码标签同源
 const ACTION_LABELS = {
   LOGIN_SUCCESS: '登录成功',
@@ -112,11 +108,6 @@ const ACTION_LABELS = {
   ROLE_GRANT: '授予管理员',
   ROLE_REVOKE: '撤销管理员',
   TRACK_DELETE: '删除轨迹'
-}
-
-function truncate(text, max) {
-  if (!text) return ''
-  return text.length > max ? text.slice(0, max) + '…' : text
 }
 
 function formatShort(t) {
@@ -134,10 +125,12 @@ const panels = computed(() => [
     key: 'tracks',
     title: '最近新增轨迹',
     to: '/tracks',
-    // 轨迹没有名称字段，展示名用「{用户名}的轨迹 #{id}」组合
+    // 轨迹名称来自移动端录入；旧轨迹没有名字，统一显示「未命名」
     items: (recent.value.recentTracks || []).map((t) => ({
       key: 't' + t.id,
-      text: t.username ? `${t.username}的轨迹 #${t.id}` : `轨迹 #${t.id}`,
+      text: t.username
+        ? `${t.username}的轨迹（${t.name || '未命名'}）`
+        : `轨迹（${t.name || '未命名'}）`,
       extra: formatShort(t.startTime)
     }))
   },
@@ -157,10 +150,11 @@ const panels = computed(() => [
     to: '/logs',
     items: (recent.value.recentLogs || []).map((l) => {
       const full = l.detail || l.targetName || ACTION_LABELS[l.action] || l.action || '-'
+      // 完整文本渲染；视觉溢出交给 CSS 单行省略号（.item-text），悬浮显示全文
       return {
         key: 'l' + l.id,
-        text: truncate(full, LOG_DETAIL_MAX),
-        tip: full.length > LOG_DETAIL_MAX ? full : null
+        text: full,
+        tip: full
       }
     })
   },
@@ -289,6 +283,8 @@ onMounted(() => {
 }
 
 .item-text {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

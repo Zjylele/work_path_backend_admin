@@ -51,6 +51,8 @@ public class TrackService {
         Track track = new Track();
         track.setUserId(userId);
         track.setClientTrackId(clientTrackId);
+        // 名称来自移动端开始记录时的录入；空白按 null 入库，展示层统一走「未命名」
+        track.setName(StringUtils.hasText(dto.getName()) ? dto.getName().trim() : null);
         track.setStartTime(dto.getStartTime());
         track.setEndTime(dto.getEndTime());
         track.setStatus(dto.getStatus());
@@ -113,6 +115,7 @@ public class TrackService {
     private TrackDetailVO toDetailVO(Track track) {
         TrackDetailVO vo = new TrackDetailVO();
         vo.setId(track.getId());
+        vo.setName(track.getName());
         vo.setStartTime(track.getStartTime());
         vo.setEndTime(track.getEndTime());
         vo.setStatus(track.getStatus());

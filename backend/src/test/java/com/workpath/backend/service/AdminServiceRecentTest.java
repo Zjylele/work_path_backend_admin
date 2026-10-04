@@ -73,6 +73,7 @@ class AdminServiceRecentTest {
         Track track = new Track();
         track.setId(11L);
         track.setUserId(2L);
+        track.setName("客户拜访行程");
         track.setStartTime(now.minusHours(2));
         track.setCreateTime(now.minusHours(1));
         Mockito.when(trackMapper.selectList(Mockito.any())).thenReturn(List.of(track));
@@ -112,6 +113,7 @@ class AdminServiceRecentTest {
 
         assertThat(vo.getRecentTracks()).hasSize(1);
         assertThat(vo.getRecentTracks().get(0).getId()).isEqualTo(11L);
+        assertThat(vo.getRecentTracks().get(0).getName()).isEqualTo("客户拜访行程");
         assertThat(vo.getRecentTracks().get(0).getUsername()).isEqualTo("zhangsan");
         assertThat(vo.getRecentTracks().get(0).getStartTime()).isEqualTo(track.getStartTime());
         assertThat(vo.getRecentTracks().get(0).getCreateTime()).isEqualTo(track.getCreateTime());

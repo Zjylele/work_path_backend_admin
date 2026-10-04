@@ -324,3 +324,32 @@ END$
 DELIMITER ;
 CALL add_policy_document_content();
 DROP PROCEDURE IF EXISTS add_policy_document_content;
+
+-- ------------------------------------------------------------
+-- 9. 轨迹名称：track 加 name 列
+--
+-- 需求：移动端开始记录轨迹时填写名称，结束时随轨迹上传入库；
+-- 管理端仪表盘/列表/详情展示名称。既有轨迹 name 为 NULL，
+-- 展示层统一显示「未命名」——不填默认值，避免"未命名"这个
+-- 展示文案被写死进数据（将来文案想改都改不动）。
+--
+-- 兼容性：只做 ADD COLUMN，可空。旧版移动端上传不带 name，
+-- 接口按 null 接受，不受影响。
+-- ------------------------------------------------------------
+DROP PROCEDURE IF EXISTS add_track_name;
+DELIMITER $
+CREATE PROCEDURE add_track_name()
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = 'track'
+                   AND COLUMN_NAME = 'name') THEN
+    ALTER TABLE `track`
+      ADD COLUMN `name` VARCHAR(100) DEFAULT NULL
+      COMMENT '轨迹名称（旧数据为 NULL，展示为「未命名」）'
+      AFTER `client_track_id`;
+  END IF;
+END$
+DELIMITER ;
+CALL add_track_name();
+DROP PROCEDURE IF EXISTS add_track_name;

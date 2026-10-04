@@ -151,6 +151,7 @@ public class AdminService {
 
         AdminTrackDetailVO vo = new AdminTrackDetailVO();
         vo.setId(track.getId());
+        vo.setName(track.getName());
         vo.setUsername(owner == null ? null : owner.getUsername());
         vo.setStartTime(track.getStartTime());
         vo.setEndTime(track.getEndTime());
@@ -250,6 +251,7 @@ public class AdminService {
         vo.setRecentTracks(tracks.stream().map(t -> {
             DashboardRecentVO.RecentTrack item = new DashboardRecentVO.RecentTrack();
             item.setId(t.getId());
+            item.setName(t.getName());
             item.setUsername(trackNames.get(t.getUserId()));
             item.setStartTime(t.getStartTime());
             item.setCreateTime(t.getCreateTime());

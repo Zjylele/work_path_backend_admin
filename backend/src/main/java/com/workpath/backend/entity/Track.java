@@ -19,6 +19,9 @@ public class Track {
     /** 移动端本地轨迹 UUID，用于上传幂等（同一用户 + clientTrackId 只入库一次） */
     private String clientTrackId;
 
+    /** 轨迹名称。移动端开始记录时填写；旧数据为 null，展示层统一显示「未命名」 */
+    private String name;
+
     private LocalDateTime startTime;
 
     private LocalDateTime endTime;

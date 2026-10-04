@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS `track` (
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '轨迹ID',
   `user_id`          BIGINT       NOT NULL COMMENT '所属用户ID',
   `client_track_id`  VARCHAR(64)  DEFAULT NULL COMMENT '移动端本地轨迹UUID（上传幂等键）',
+  `name`             VARCHAR(100) DEFAULT NULL COMMENT '轨迹名称（旧数据为 NULL，展示为「未命名」）',
   `start_time`       DATETIME     NOT NULL COMMENT '开始时间',
   `end_time`         DATETIME     DEFAULT NULL COMMENT '结束时间',
   `status`           TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：1=进行中,2=已完成',

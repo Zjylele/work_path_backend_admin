@@ -34,6 +34,9 @@
     <!-- 表格 -->
     <el-table v-loading="loading" :data="list" stripe>
       <el-table-column prop="id" label="ID" width="80" />
+      <el-table-column label="名称" min-width="150" show-overflow-tooltip>
+        <template #default="{ row }">{{ row.name || '未命名' }}</template>
+      </el-table-column>
       <el-table-column prop="username" label="用户" min-width="110" />
       <el-table-column prop="startTime" label="开始时间" min-width="170" />
       <el-table-column prop="endTime" label="结束时间" min-width="170" />

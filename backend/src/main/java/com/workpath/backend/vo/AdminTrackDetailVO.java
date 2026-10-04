@@ -10,6 +10,8 @@ public class AdminTrackDetailVO {
 
     private Long id;
 
+    private String name;
+
     private String username;
 
     private LocalDateTime startTime;

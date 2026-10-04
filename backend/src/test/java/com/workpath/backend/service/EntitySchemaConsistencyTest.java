@@ -112,6 +112,12 @@ class EntitySchemaConsistencyTest {
     }
 
     @Test
+    @DisplayName("Track 实体的 name 有对应列（轨迹名称链路依赖它）")
+    void trackNameColumn() {
+        assertThat(trackColumns).contains("name");
+    }
+
+    @Test
     @DisplayName("work_event 的 not-null 列在实体路径上都有值来源")
     void requiredColumnsCovered() throws java.sql.SQLException {
         // confirm_status NOT NULL 且无数据库默认值的字段，必须由实体负责写入。

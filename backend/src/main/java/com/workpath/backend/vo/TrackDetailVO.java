@@ -10,6 +10,8 @@ public class TrackDetailVO {
 
     private Long id;
 
+    private String name;
+
     private LocalDateTime startTime;
 
     private LocalDateTime endTime;
