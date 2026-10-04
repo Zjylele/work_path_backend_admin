@@ -124,12 +124,18 @@ class EntitySchemaConsistencyTest {
     @Test
     @DisplayName("MyBatis 能真正 INSERT work_event——把结构对账落实到 SQL 层")
     void insertWorksEndToEnd() throws SQLException {
-        // 直接跑一条最小 INSERT，验证实体字段名与列名的组合能被数据库接受
-        jdbcTemplate.execute("""
-                INSERT INTO work_event (track_id, user_id, event_type, start_time, end_time,
-                                        ai_reason, confirm_status)
-                VALUES (0, 0, 'PROBE', NOW(), NOW(), 'schema consistency probe', 0)
-                """);
+        // 直接跑一条最小 INSERT，验证实体字段名与列名的组合能被数据库接受。
+        // finally 立即清理探针行：这是写进开发库的数据，不清会出现在
+        // 工作事件复核列表与仪表盘「待复核工作事件」面板里（曾残留多条）
+        try {
+            jdbcTemplate.execute("""
+                    INSERT INTO work_event (track_id, user_id, event_type, start_time, end_time,
+                                            ai_reason, confirm_status)
+                    VALUES (0, 0, 'PROBE', NOW(), NOW(), 'schema consistency probe', 0)
+                    """);
+        } finally {
+            jdbcTemplate.update("DELETE FROM work_event WHERE track_id = 0 AND event_type = 'PROBE'");
+        }
     }
 
     private Set<String> columnsOf(String table) throws SQLException {

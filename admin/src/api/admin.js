@@ -5,6 +5,11 @@ export function getStats() {
   return request.get('/admin/stats')
 }
 
+// 仪表盘最近动态（轨迹/待复核事件/日志/制度文档各最多 10 条）
+export function getDashboardRecent() {
+  return request.get('/admin/dashboard/recent')
+}
+
 // 用户管理
 export function getUserList(params) {
   return request.get('/admin/users', { params })

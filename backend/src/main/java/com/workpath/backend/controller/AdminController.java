@@ -9,6 +9,7 @@ import com.workpath.backend.service.AdminService;
 import com.workpath.backend.vo.AdminTrackDetailVO;
 import com.workpath.backend.vo.AdminTrackVO;
 import com.workpath.backend.vo.AdminUserVO;
+import com.workpath.backend.vo.DashboardRecentVO;
 import com.workpath.backend.vo.PageVO;
 import com.workpath.backend.vo.StatsVO;
 import io.swagger.v3.oas.annotations.Operation;
@@ -101,6 +102,12 @@ public class AdminController {
     @GetMapping("/stats")
     public Result<StatsVO> stats() {
         return Result.success(adminService.stats());
+    }
+
+    @Operation(summary = "仪表盘最近动态（轨迹/待复核事件/日志/制度文档各 10 条）")
+    @GetMapping("/dashboard/recent")
+    public Result<DashboardRecentVO> dashboardRecent() {
+        return Result.success(adminService.recent());
     }
 
     @Operation(summary = "操作日志列表")

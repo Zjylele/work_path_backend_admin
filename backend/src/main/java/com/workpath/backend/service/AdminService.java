@@ -6,18 +6,23 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.workpath.backend.common.BusinessException;
 import com.workpath.backend.common.ResultCode;
+import com.workpath.backend.entity.OperationLog;
+import com.workpath.backend.entity.PolicyDocument;
 import com.workpath.backend.entity.Track;
 import com.workpath.backend.entity.TrackPoint;
 import com.workpath.backend.entity.User;
-import com.workpath.backend.entity.OperationLog;
+import com.workpath.backend.entity.WorkEvent;
 import com.workpath.backend.interceptor.UserContext;
 import com.workpath.backend.mapper.OperationLogMapper;
+import com.workpath.backend.mapper.PolicyDocumentMapper;
 import com.workpath.backend.mapper.TrackMapper;
 import com.workpath.backend.mapper.TrackPointMapper;
 import com.workpath.backend.mapper.UserMapper;
+import com.workpath.backend.mapper.WorkEventMapper;
 import com.workpath.backend.vo.AdminTrackDetailVO;
 import com.workpath.backend.vo.AdminTrackVO;
 import com.workpath.backend.vo.AdminUserVO;
+import com.workpath.backend.vo.DashboardRecentVO;
 import com.workpath.backend.vo.StatsVO;
 import com.workpath.backend.vo.TrackPointVO;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +34,7 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -40,6 +46,11 @@ public class AdminService {
     private final TrackPointMapper trackPointMapper;
     private final OperationLogMapper operationLogMapper;
     private final OperationLogService operationLogService;
+    private final WorkEventMapper workEventMapper;
+    private final PolicyDocumentMapper policyDocumentMapper;
+
+    /** 每块仪表盘面板最多展示的条目数：面板是"最近动态"入口，不是完整列表 */
+    private static final int RECENT_LIMIT = 10;
 
     public IPage<AdminUserVO> userList(Integer page, Integer pageSize, String keyword) {
         return userMapper.selectAdminUsers(new Page<>(page, pageSize), keyword);
@@ -219,6 +230,92 @@ public class AdminService {
         vo.setTodayUserCount(userMapper.selectCount(
                 new QueryWrapper<User>().ge("create_time", LocalDate.now().atStartOfDay())));
         return vo;
+    }
+
+    /**
+     * 仪表盘最近动态：轨迹 / 待复核工作事件 / 操作日志 / 制度文档各取最新 10 条。
+     *
+     * <p>四张表各一条 LIMIT 10 查询，不用分页——面板只回答「最近有什么」，
+     * 完整列表在各管理页。用户名用一次批量查询填充，避免逐条 N+1。</p>
+     */
+    public DashboardRecentVO recent() {
+        DashboardRecentVO vo = new DashboardRecentVO();
+
+        List<Track> tracks = trackMapper.selectList(new LambdaQueryWrapper<Track>()
+                .orderByDesc(Track::getCreateTime)
+                .orderByDesc(Track::getId)
+                .last("LIMIT " + RECENT_LIMIT));
+        Map<Long, String> trackNames = userNames(
+                tracks.stream().map(Track::getUserId).distinct().toList());
+        vo.setRecentTracks(tracks.stream().map(t -> {
+            DashboardRecentVO.RecentTrack item = new DashboardRecentVO.RecentTrack();
+            item.setId(t.getId());
+            item.setUsername(trackNames.get(t.getUserId()));
+            item.setStartTime(t.getStartTime());
+            item.setCreateTime(t.getCreateTime());
+            return item;
+        }).toList());
+
+        List<WorkEvent> events = workEventMapper.selectList(new LambdaQueryWrapper<WorkEvent>()
+                .eq(WorkEvent::getConfirmStatus, 0)
+                .orderByDesc(WorkEvent::getCreateTime)
+                .orderByDesc(WorkEvent::getEventId)
+                .last("LIMIT " + RECENT_LIMIT));
+        Map<Long, String> eventNames = userNames(
+                events.stream().map(WorkEvent::getUserId).distinct().toList());
+        vo.setPendingEvents(events.stream().map(e -> {
+            DashboardRecentVO.RecentEvent item = new DashboardRecentVO.RecentEvent();
+            item.setEventId(e.getEventId());
+            item.setUsername(eventNames.get(e.getUserId()));
+            item.setEventType(e.getEventType());
+            item.setPoiName(e.getPoiName());
+            item.setSemanticLabel(e.getSemanticLabel());
+            item.setStartTime(e.getStartTime());
+            item.setCreateTime(e.getCreateTime());
+            return item;
+        }).toList());
+
+        List<OperationLog> logs = operationLogMapper.selectList(new LambdaQueryWrapper<OperationLog>()
+                .orderByDesc(OperationLog::getCreateTime)
+                .orderByDesc(OperationLog::getId)
+                .last("LIMIT " + RECENT_LIMIT));
+        vo.setRecentLogs(logs.stream().map(l -> {
+            DashboardRecentVO.RecentLog item = new DashboardRecentVO.RecentLog();
+            item.setId(l.getId());
+            item.setUsername(l.getUsername());
+            item.setAction(l.getAction());
+            item.setTargetName(l.getTargetName());
+            item.setDetail(l.getDetail());
+            item.setCreateTime(l.getCreateTime());
+            return item;
+        }).toList());
+
+        // 只取启用版本：与知识库列表页口径一致——面板展示了已停用文档，
+        // 用户点进列表页反而找不到这一条
+        List<PolicyDocument> docs = policyDocumentMapper.selectList(new LambdaQueryWrapper<PolicyDocument>()
+                .eq(PolicyDocument::getStatus, 1)
+                .orderByDesc(PolicyDocument::getCreateTime)
+                .orderByDesc(PolicyDocument::getDocId)
+                .last("LIMIT " + RECENT_LIMIT));
+        vo.setRecentDocuments(docs.stream().map(d -> {
+            DashboardRecentVO.RecentDocument item = new DashboardRecentVO.RecentDocument();
+            item.setDocId(d.getDocId());
+            item.setTitle(d.getTitle());
+            item.setVersion(d.getVersion());
+            item.setCreateTime(d.getCreateTime());
+            return item;
+        }).toList());
+
+        return vo;
+    }
+
+    /** 批量查用户名；空集合不查库。 */
+    private Map<Long, String> userNames(List<Long> userIds) {
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        return userMapper.selectBatchIds(userIds).stream()
+                .collect(Collectors.toMap(User::getId, User::getUsername, (a, b) -> a));
     }
 
     private User getUserOrThrow(Long id) {
