@@ -8,6 +8,7 @@ import com.workpath.backend.entity.PolicyDocument;
 import com.workpath.backend.service.ClauseQaService;
 import com.workpath.backend.service.PolicyClauseService;
 import com.workpath.backend.service.PolicyDocumentService;
+import com.workpath.backend.vo.PolicyDocumentPreviewVO;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -97,6 +98,25 @@ class PolicyControllerTest {
         Mockito.when(clauseService.reindex(3L)).thenReturn(4);
         Result<Map<String, Object>> res = controller.reindex(3L);
         assertThat(res.getData().get("updated")).isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("预览接口返回内容与来源标注，来源决定前端是否提示「条款拼合视图」")
+    void previewReturnsContentAndSource() {
+        PolicyDocumentPreviewVO vo = new PolicyDocumentPreviewVO();
+        vo.setDocId(9L);
+        vo.setTitle("外勤管理制度");
+        vo.setContent("1.1 外勤人员应提前报备。");
+        vo.setSource(PolicyDocumentPreviewVO.SOURCE_CLAUSES);
+        Mockito.when(documentService.preview(9L)).thenReturn(vo);
+
+        Result<PolicyDocumentPreviewVO> res = controller.preview(9L);
+
+        assertThat(res.getCode()).isEqualTo(200);
+        assertThat(res.getData().getDocId()).isEqualTo(9L);
+        assertThat(res.getData().getContent()).isEqualTo("1.1 外勤人员应提前报备。");
+        assertThat(res.getData().getSource()).isEqualTo("clauses");
+        Mockito.verify(documentService).preview(9L);
     }
 
     @Test

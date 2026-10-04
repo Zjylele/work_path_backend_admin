@@ -47,8 +47,9 @@
             <el-table-column label="上传时间" width="170">
               <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="180" fixed="right">
+            <el-table-column label="操作" width="240" fixed="right">
               <template #default="{ row }">
+                <el-button link type="success" @click="handlePreview(row)">预览</el-button>
                 <el-button link type="primary" @click="viewClauses(row)">查看条款</el-button>
                 <el-button link type="warning" @click="handleReindex(row)">重新向量化</el-button>
                 <el-button link type="danger" @click="handleDisable(row)">停用</el-button>
@@ -150,11 +151,31 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- 文档预览：新文档看原文；原文留存功能上线前的存量文档看条款拼合并明确标注 -->
+    <el-dialog
+      v-model="previewVisible"
+      :title="previewTitle"
+      width="720px"
+      top="6vh"
+    >
+      <div v-loading="previewLoading" class="preview-wrap">
+        <el-alert
+          v-if="preview.source === 'clauses'"
+          type="info"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 12px"
+          title="该文档上传于原文留存功能上线之前，无法还原原始排版，以下为按其条款拼合的内容（编号为系统生成）。"
+        />
+        <div class="preview-body">{{ preview.content }}</div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getPolicyDocuments,
@@ -163,7 +184,8 @@ import {
   deletePolicyDocument,
   reindexPolicyDocument,
   searchPolicyClauses,
-  askPolicyClause
+  askPolicyClause,
+  previewPolicyDocument
 } from '@/api/policy'
 
 const documents = ref([])
@@ -264,6 +286,37 @@ async function handleDisable(row) {
     await loadDocuments()
   } catch {
     // 失败原因已由 request 拦截器提示
+  }
+}
+
+// ---- 文档预览 ----
+const previewVisible = ref(false)
+const previewLoading = ref(false)
+const preview = reactive({ title: '', version: '', content: '', source: '' })
+
+const previewTitle = computed(() =>
+  preview.title ? `${preview.title} · ${preview.version || ''}` : '文档预览'
+)
+
+async function handlePreview(row) {
+  // 先开弹窗再加载：长文档从磁盘读出有延迟，空窗等待不如先见到 loading
+  previewVisible.value = true
+  previewLoading.value = true
+  preview.title = row.title
+  preview.version = row.version
+  preview.content = ''
+  preview.source = ''
+  try {
+    const res = await previewPolicyDocument(row.docId)
+    preview.title = res.data.title || row.title
+    preview.version = res.data.version || row.version
+    preview.content = res.data.content || '（文档内容为空）'
+    preview.source = res.data.source || ''
+  } catch {
+    // 失败原因已由 request 拦截器提示；留一个空白弹窗没有意义，直接收起
+    previewVisible.value = false
+  } finally {
+    previewLoading.value = false
   }
 }
 
@@ -401,5 +454,17 @@ onMounted(loadDocuments)
   font-size: 13px;
   line-height: 1.6;
   color: #303133;
+}
+.preview-wrap {
+  min-height: 120px;
+}
+.preview-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 1.8;
+  color: #303133;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 </style>

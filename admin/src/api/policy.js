@@ -23,3 +23,8 @@ export function searchPolicyClauses(query, topK) {
 export function askPolicyClause(question, topK) {
   return request.post('/admin/policy/clauses/ask', { question, topK })
 }
+
+// 预览文档内容（原文优先；加列前的存量文档返回条款拼合，source 标注来源）
+export function previewPolicyDocument(id) {
+  return request.get(`/admin/policy/documents/${id}/preview`)
+}

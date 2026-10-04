@@ -10,6 +10,7 @@ import com.workpath.backend.interceptor.UserContext;
 import com.workpath.backend.mapper.PolicyClauseMapper;
 import com.workpath.backend.mapper.PolicyDocumentMapper;
 import com.workpath.backend.util.VectorCodec;
+import com.workpath.backend.vo.PolicyDocumentPreviewVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +20,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * 制度文档服务：上传、版本管理、停用级联。
@@ -92,6 +94,9 @@ public class PolicyDocumentService {
         doc.setTitle(title);
         doc.setVersion("v" + nextVersion + ".0");
         doc.setCategory(trimToNull(dto.getCategory()));
+        // 原文原样留存：预览功能按它还原文档。条款是派生物，不替代原文——
+        // 预览若拿条款拼合，编号被重写、AUTO 编号是系统生成的，不是原文档形态
+        doc.setContent(dto.getContent());
         doc.setStatus(1);
         doc.setUploaderId(uploaderId);
         doc.setCreateTime(LocalDateTime.now());
@@ -224,6 +229,41 @@ public class PolicyDocumentService {
         q.eq(PolicyClause::getDocId, docId);
         q.orderByAsc(PolicyClause::getClauseIndex);
         return clauseMapper.selectList(q);
+    }
+
+    /**
+     * 预览文档内容。
+     *
+     * <p>原文优先：加 content 列之后上传的文档直接返回原文。加列前的存量
+     * 文档 content 为 null，退回按条款拼合（编号 + 正文，与条款列表口径一致），
+     * 并用 {@code source} 标注来源——不把拼合视图冒充成原文。</p>
+     */
+    public PolicyDocumentPreviewVO preview(Long docId) {
+        PolicyDocument doc = documentMapper.selectById(docId);
+        if (doc == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "制度文档不存在");
+        }
+        PolicyDocumentPreviewVO vo = new PolicyDocumentPreviewVO();
+        vo.setDocId(doc.getDocId());
+        vo.setTitle(doc.getTitle());
+        vo.setVersion(doc.getVersion());
+        vo.setCategory(doc.getCategory());
+        vo.setCreateTime(doc.getCreateTime());
+        if (StringUtils.hasText(doc.getContent())) {
+            vo.setContent(doc.getContent());
+            vo.setSource(PolicyDocumentPreviewVO.SOURCE_ORIGINAL);
+        } else {
+            vo.setContent(joinClauses(docId));
+            vo.setSource(PolicyDocumentPreviewVO.SOURCE_CLAUSES);
+        }
+        return vo;
+    }
+
+    /** 条款拼合：编号 + 正文逐条拼接，条款间空行分隔；顺序与条款列表一致。 */
+    private String joinClauses(Long docId) {
+        return clauses(docId).stream()
+                .map(c -> c.getClauseCode() + " " + c.getContent())
+                .collect(Collectors.joining("\n\n"));
     }
 
     /**

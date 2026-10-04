@@ -28,6 +28,12 @@ public class PolicyDocument {
 
     private String category;
 
+    /**
+     * 制度原文（预览用）。上传时原样留存；加列前上传的存量文档为 null，
+     * 预览接口会退回按条款拼合并标注来源。
+     */
+    private String content;
+
     /** 状态：1=启用，0=停用 */
     private Integer status;
 

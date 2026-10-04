@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS `policy_document` (
   `title`       VARCHAR(200) NOT NULL COMMENT '文档标题',
   `version`     VARCHAR(20)  DEFAULT 'v1.0' COMMENT '版本号',
   `category`    VARCHAR(50)  DEFAULT NULL COMMENT '分类',
+  `content`     MEDIUMTEXT   DEFAULT NULL COMMENT '制度原文（预览用；加列前的存量文档为 NULL，预览时按条款拼合）',
   `status`      TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：1=启用,0=停用',
   `uploader_id` BIGINT       DEFAULT NULL COMMENT '上传人ID',
   `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '上传时间',
@@ -293,3 +294,33 @@ END$$
 DELIMITER ;
 CALL multipurpose_model_provider();
 DROP PROCEDURE IF EXISTS multipurpose_model_provider;
+
+-- ------------------------------------------------------------
+-- 8. M6 增强：policy_document 加 content 列（制度文档预览）
+--
+-- 根因：上传时原文只用于切分条款，随即丢弃，文档表没有任何地方能取回
+-- 原始文本。「预览制度文档」功能上线后，新文档必须能按原文预览，
+-- 否则只能拿切分后的条款拼合——编号被重写、AUTO 编号是系统生成的，
+-- 不是原文档的形态。
+--
+-- 兼容性：只做 ADD COLUMN，可空、无默认值，旧代码不 SELECT 该列
+-- （MyBatis-Plus 实体未加字段时不会带上它），加列对既有功能透明。
+-- 存量文档 content 为 NULL，预览接口按条款拼合并标注来源。
+-- ------------------------------------------------------------
+DROP PROCEDURE IF EXISTS add_policy_document_content;
+DELIMITER $
+CREATE PROCEDURE add_policy_document_content()
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = 'policy_document'
+                   AND COLUMN_NAME = 'content') THEN
+    ALTER TABLE `policy_document`
+      ADD COLUMN `content` MEDIUMTEXT DEFAULT NULL
+      COMMENT '制度原文（预览用；加列前的存量文档为 NULL，预览时按条款拼合）'
+      AFTER `category`;
+  END IF;
+END$
+DELIMITER ;
+CALL add_policy_document_content();
+DROP PROCEDURE IF EXISTS add_policy_document_content;

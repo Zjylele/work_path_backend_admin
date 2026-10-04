@@ -8,7 +8,8 @@ import com.workpath.backend.entity.ModelProviderConfig;
 import com.workpath.backend.entity.User;
 import com.workpath.backend.interceptor.UserContext;
 import com.workpath.backend.mapper.PolicyClauseMapper;
-import com.workpath.backend.mapper.PolicyDocumentMapper;import org.junit.jupiter.api.AfterEach;
+import com.workpath.backend.mapper.PolicyDocumentMapper;
+import com.workpath.backend.vo.PolicyDocumentPreviewVO;import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -227,6 +228,14 @@ class PolicyDocumentServiceTest {
             assertThatThrownBy(() -> service.upload(upload("x", null, DOC_3_CLAUSES)))
                     .isInstanceOf(com.workpath.backend.common.BusinessException.class);
         }
+
+        @Test
+        @DisplayName("上传时原文被原样留存到文档上（预览功能的依据）")
+        void originalContentPersisted() {
+            loginAs("admin", true);
+            service.upload(upload("外勤管理制度", "考勤", DOC_3_CLAUSES));
+            assertThat(storedDocs.get(0).getContent()).isEqualTo(DOC_3_CLAUSES);
+        }
     }
 
     @Nested
@@ -385,6 +394,59 @@ class PolicyDocumentServiceTest {
             service.disable(docId);
 
             assertThat(storedDocs.get(0).getStatus()).isZero();
+        }
+    }
+
+    @Nested
+    @DisplayName("文档预览")
+    class Preview {
+
+        @Test
+        @DisplayName("有原文时预览返回原文，source=original，不带条款拼合痕迹")
+        void originalContentPreferred() {
+            loginAs("admin", true);
+            service.upload(upload("外勤管理制度", "考勤", DOC_3_CLAUSES));
+            Long docId = storedDocs.get(0).getDocId();
+
+            PolicyDocumentPreviewVO vo = service.preview(docId);
+
+            assertThat(vo.getSource()).isEqualTo("original");
+            assertThat(vo.getContent()).isEqualTo(DOC_3_CLAUSES);
+            assertThat(vo.getDocId()).isEqualTo(docId);
+            assertThat(vo.getTitle()).isEqualTo("外勤管理制度");
+            assertThat(vo.getVersion()).isEqualTo("v1.0");
+            assertThat(vo.getCategory()).isEqualTo("考勤");
+        }
+
+        @Test
+        @DisplayName("存量文档（无原文）预览退回条款拼合，source=clauses，条款按文档内顺序拼接")
+        void fallsBackToClauses() {
+            loginAs("admin", true);
+            service.upload(upload("外勤管理制度", "考勤", DOC_3_CLAUSES));
+            Long docId = storedDocs.get(0).getDocId();
+            // 模拟加列前的存量文档：原文为 null，只能拿条款拼合
+            storedDocs.get(0).setContent(null);
+
+            PolicyDocumentPreviewVO vo = service.preview(docId);
+
+            assertThat(vo.getSource()).isEqualTo("clauses");
+            assertThat(vo.getContent())
+                    .contains("1.1 外勤人员因公外出应提前一个工作日")
+                    .contains("1.2 因公外出期间应保持通讯畅通")
+                    .contains("1.3 外勤人员应每日提交工作日志");
+            // 顺序与条款在文档内的顺序一致
+            assertThat(vo.getContent().indexOf("1.1"))
+                    .isLessThan(vo.getContent().indexOf("1.2"));
+            assertThat(vo.getContent().indexOf("1.2"))
+                    .isLessThan(vo.getContent().indexOf("1.3"));
+        }
+
+        @Test
+        @DisplayName("预览不存在的文档抛业务异常，不返回空壳")
+        void missingDoc() {
+            loginAs("admin", true);
+            assertThatThrownBy(() -> service.preview(999L))
+                    .isInstanceOf(com.workpath.backend.common.BusinessException.class);
         }
     }
 

@@ -8,6 +8,7 @@ import com.workpath.backend.entity.PolicyDocument;
 import com.workpath.backend.service.ClauseQaService;
 import com.workpath.backend.service.PolicyClauseService;
 import com.workpath.backend.service.PolicyDocumentService;
+import com.workpath.backend.vo.PolicyDocumentPreviewVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -64,6 +65,12 @@ public class PolicyController {
     @GetMapping("/documents/{id}/clauses")
     public Result<List<PolicyClause>> clauses(@PathVariable("id") Long id) {
         return Result.success(documentService.clauses(id));
+    }
+
+    @Operation(summary = "预览制度文档（原文优先；加列前的存量文档按条款拼合并标注来源）")
+    @GetMapping("/documents/{id}/preview")
+    public Result<PolicyDocumentPreviewVO> preview(@PathVariable("id") Long id) {
+        return Result.success(documentService.preview(id));
     }
 
     @Operation(summary = "停用制度文档（级联停用其条款）")
