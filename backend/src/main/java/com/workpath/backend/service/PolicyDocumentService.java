@@ -50,19 +50,22 @@ public class PolicyDocumentService {
     private final EmbeddingClient embeddingClient;
     private final ModelProviderService modelProviderService;
     private final OperationLogService operationLogService;
+    private final DocumentTextExtractor textExtractor;
 
     public PolicyDocumentService(PolicyDocumentMapper documentMapper,
                                  PolicyClauseMapper clauseMapper,
                                  ClauseSplitter clauseSplitter,
                                  EmbeddingClient embeddingClient,
                                  ModelProviderService modelProviderService,
-                                 OperationLogService operationLogService) {
+                                 OperationLogService operationLogService,
+                                 DocumentTextExtractor textExtractor) {
         this.documentMapper = documentMapper;
         this.clauseMapper = clauseMapper;
         this.clauseSplitter = clauseSplitter;
         this.embeddingClient = embeddingClient;
         this.modelProviderService = modelProviderService;
         this.operationLogService = operationLogService;
+        this.textExtractor = textExtractor;
     }
 
     /**
@@ -161,6 +164,37 @@ public class PolicyDocumentService {
                 "标题=" + doc.getTitle() + "，版本=" + doc.getVersion()
                         + "，条款数=" + clauses.size(), true);
         return doc;
+    }
+
+    /**
+     * 从上传的文档文件导入制度（本机选择 .txt / .md / .docx）。
+     *
+     * <p>提取纯文本后走与「粘贴文本」完全相同的切分/落库/向量化链路——
+     * 两条入口共享下游，不允许出现第二套切分逻辑，否则同一份制度走不同
+     * 入口入库后，检索质量会分叉且难以排查。</p>
+     *
+     * @param filename 原始文件名（决定解析方式；标题缺省时取文件名）
+     * @param bytes    文件字节
+     * @param title    标题，可空（缺省取文件名去扩展名）
+     * @param category 分类，可空
+     */
+    public PolicyDocument uploadFile(String filename, byte[] bytes, String title, String category) {
+        String text = textExtractor.extract(filename, bytes);
+        PolicyUploadDTO dto = new PolicyUploadDTO();
+        dto.setTitle(StringUtils.hasText(title) ? title : titleFromFilename(filename));
+        dto.setCategory(category);
+        dto.setContent(text);
+        return upload(dto);
+    }
+
+    /** 标题缺省：文件名去扩展名；去完为空再退到「未命名文档」。 */
+    static String titleFromFilename(String filename) {
+        if (filename == null || filename.isBlank()) {
+            return "未命名文档";
+        }
+        int dot = filename.lastIndexOf('.');
+        String base = dot > 0 ? filename.substring(0, dot) : filename;
+        return StringUtils.hasText(base) ? base : "未命名文档";
     }
 
     /**

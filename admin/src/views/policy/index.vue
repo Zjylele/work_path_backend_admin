@@ -19,6 +19,28 @@
             <el-form-item label="分类">
               <el-input v-model="form.category" placeholder="如 考勤 / 行为规范" />
             </el-form-item>
+            <el-form-item label="文档文件">
+              <div class="file-upload-row">
+                <el-upload
+                  ref="fileUploadRef"
+                  :auto-upload="false"
+                  :limit="1"
+                  :show-file-list="false"
+                  accept=".txt,.md,.docx"
+                  :on-change="handleFileChange"
+                  :on-exceed="handleExceed"
+                >
+                  <el-button :icon="Upload">选择本机文档</el-button>
+                </el-upload>
+                <template v-if="selectedFile">
+                  <span class="file-name">{{ selectedFile.name }}</span>
+                  <el-button link type="danger" @click="clearFile">移除</el-button>
+                </template>
+                <span v-else class="file-tip">
+                  支持 .txt / .md / .docx，自动读取原文（与下方粘贴二选一；编号请手打进正文）
+                </span>
+              </div>
+            </el-form-item>
             <el-form-item label="制度原文">
               <el-input
                 v-model="form.content"
@@ -31,7 +53,7 @@
               <el-button type="primary" :loading="uploading" @click="handleUpload">
                 上传并切分
               </el-button>
-              <el-button @click="Object.assign(form, blank())">清空</el-button>
+              <el-button @click="handleClear">清空</el-button>
             </el-form-item>
           </el-form>
         </el-card>
@@ -177,6 +199,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Upload } from '@element-plus/icons-vue'
 import {
   getPolicyDocuments,
   uploadPolicyDocument,
@@ -185,7 +208,8 @@ import {
   reindexPolicyDocument,
   searchPolicyClauses,
   askPolicyClause,
-  previewPolicyDocument
+  previewPolicyDocument,
+  uploadPolicyFile
 } from '@/api/policy'
 
 const documents = ref([])
@@ -198,6 +222,10 @@ const answer = ref(null)
 const clauseLoading = ref(false)
 
 const form = reactive(blank())
+
+// ---- 文档文件导入（本机选择 .txt / .md / .docx）----
+const selectedFile = ref(null)
+const fileUploadRef = ref()
 const currentDoc = ref(null)
 const clauses = ref([])
 const searchQuery = ref('')
@@ -219,21 +247,61 @@ async function loadDocuments() {
 }
 
 async function handleUpload() {
-  if (!form.title.trim() || !form.content.trim()) {
-    ElMessage.warning('标题和制度原文不能为空')
+  // 未选文件时按粘贴文本校验；选了文件则标题可空（服务端取文件名兜底）
+  if (!selectedFile.value && (!form.title.trim() || !form.content.trim())) {
+    ElMessage.warning('标题和制度原文不能为空（或选择文档文件快速导入）')
     return
   }
   uploading.value = true
   try {
-    const res = await uploadPolicyDocument({ ...form })
-    ElMessage.success(`已上传 ${res.data.version}，文档 ID ${res.data.docId}`)
-    Object.assign(form, blank())
+    if (selectedFile.value) {
+      // 文件导入：服务端自动提取原文，走同一套切分链路
+      const res = await uploadPolicyFile(
+        selectedFile.value,
+        form.title.trim() || undefined,
+        form.category.trim() || undefined
+      )
+      ElMessage.success(`已上传 ${res.data.version}，标题：${res.data.title}`)
+      handleClear()
+    } else {
+      const res = await uploadPolicyDocument({ ...form })
+      ElMessage.success(`已上传 ${res.data.version}，文档 ID ${res.data.docId}`)
+      Object.assign(form, blank())
+    }
     await loadDocuments()
   } catch {
     // 失败原因已由 request 拦截器提示
   } finally {
     uploading.value = false
   }
+}
+
+// ---- 文档文件选择 ----
+function fillTitleIfBlank(name) {
+  if (form.title.trim() || !name) return
+  const dot = name.lastIndexOf('.')
+  form.title = dot > 0 ? name.slice(0, dot) : name
+}
+
+function handleFileChange(uploadFile) {
+  selectedFile.value = uploadFile.raw
+  fillTitleIfBlank(uploadFile.name)
+}
+
+function handleExceed(files) {
+  // limit=1 时再次选择：替换为最新文件
+  selectedFile.value = files[0]
+  fillTitleIfBlank(files[0]?.name)
+}
+
+function clearFile() {
+  selectedFile.value = null
+  fileUploadRef.value?.clearFiles()
+}
+
+function handleClear() {
+  Object.assign(form, blank())
+  clearFile()
 }
 
 async function viewClauses(row) {
@@ -365,6 +433,20 @@ onMounted(loadDocuments)
 <style scoped>
 .card-title {
   font-weight: 600;
+}
+.file-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.file-name {
+  color: #303133;
+  font-size: 13px;
+}
+.file-tip {
+  color: #909399;
+  font-size: 12px;
 }
 .card-header {
   display: flex;

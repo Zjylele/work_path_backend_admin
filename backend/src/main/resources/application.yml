@@ -4,6 +4,12 @@ server:
 spring:
   application:
     name: work-path-backend
+  servlet:
+    multipart:
+      # 制度文档上传（选择本机文件）：默认 1MB 对 docx 不够；
+      # 提取只取文本入库，10MB 的文档文件上限绰绰有余
+      max-file-size: 10MB
+      max-request-size: 12MB
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/work_path?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true

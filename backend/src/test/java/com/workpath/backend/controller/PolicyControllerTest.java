@@ -13,6 +13,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.springframework.mock.web.MockMultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -33,6 +34,28 @@ class PolicyControllerTest {
     private final ClauseQaService clauseQaService = Mockito.mock(ClauseQaService.class);
     private final PolicyController controller =
             new PolicyController(documentService, clauseService, clauseQaService);
+
+    @Test
+    @DisplayName("文件上传接口：文件名与字节透传给服务层，标题/分类可空")
+    void uploadFileDelegates() {
+        PolicyDocument doc = new PolicyDocument();
+        doc.setDocId(11L);
+        doc.setVersion("v1.0");
+        doc.setTitle("外勤管理办法");
+        Mockito.when(documentService.uploadFile(
+                        Mockito.eq("外勤管理办法.txt"), Mockito.any(byte[].class),
+                        Mockito.isNull(), Mockito.eq("考勤")))
+                .thenReturn(doc);
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "外勤管理办法.txt", "text/plain", "1.1 内容内容内容。".getBytes());
+
+        Result<Map<String, Object>> res = controller.uploadFile(file, null, "考勤");
+
+        assertThat(res.getCode()).isEqualTo(200);
+        assertThat(res.getData().get("docId")).isEqualTo(11L);
+        assertThat(res.getData().get("version")).isEqualTo("v1.0");
+        assertThat(res.getData().get("title")).isEqualTo("外勤管理办法");
+    }
 
     @Test
     @DisplayName("上传接口返回 docId 与 version，方便前端直接展示")

@@ -120,7 +120,8 @@ class PolicyDocumentServiceTest {
         // 注意：不在这里桩 requireConfig。默认走"未配 EMBEDDING"路径（文档仍应入库），
         // 需要向量化成功的用例单独调 stubEmbeddingConfig()
         service = new PolicyDocumentService(docMapper, clauseMapper, new ClauseSplitter(),
-                embeddingClient, modelProviderService, operationLogService);
+                embeddingClient, modelProviderService, operationLogService,
+                new DocumentTextExtractor());
     }
 
 
@@ -447,6 +448,51 @@ class PolicyDocumentServiceTest {
             loginAs("admin", true);
             assertThatThrownBy(() -> service.preview(999L))
                     .isInstanceOf(com.workpath.backend.common.BusinessException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("文档文件导入（本机选择文件）")
+    class FileUpload {
+
+        @Test
+        @DisplayName("上传 txt：提取原文、标题缺省取文件名、走同一套切分落库")
+        void uploadTxtFile() {
+            loginAs("admin", true);
+            String text = "1.1 外勤人员因公外出应提前报备，经部门负责人批准后方可出行。\n"
+                    + "1.2 因公外出期间应保持通讯畅通，按报备路线行驶。";
+            PolicyDocument doc = service.uploadFile(
+                    "外勤管理办法.txt",
+                    text.getBytes(java.nio.charset.StandardCharsets.UTF_8), null, "考勤");
+
+            assertThat(doc.getTitle()).isEqualTo("外勤管理办法");
+            assertThat(doc.getVersion()).isEqualTo("v1.0");
+            assertThat(storedDocs).hasSize(1);
+            assertThat(storedClauses).hasSize(2);
+            // 原文留存（预览依据）：提取的文本即制度原文
+            assertThat(storedDocs.get(0).getContent()).contains("1.1 外勤人员因公外出应提前报备");
+        }
+
+        @Test
+        @DisplayName("显式标题优先于文件名；分类透传")
+        void explicitTitleWins() {
+            loginAs("admin", true);
+            service.uploadFile("a.txt",
+                    "1.1 外勤人员应每日提交工作日志并接受部门负责人复核。"
+                            .getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    "手工标题", "行为规范");
+            assertThat(storedDocs.get(0).getTitle()).isEqualTo("手工标题");
+            assertThat(storedDocs.get(0).getCategory()).isEqualTo("行为规范");
+        }
+
+        @Test
+        @DisplayName("不支持的格式（pdf）直接拒绝，不产生文档")
+        void rejectsUnsupported() {
+            loginAs("admin", true);
+            assertThatThrownBy(() -> service.uploadFile("制度.pdf",
+                    "1.1 x".getBytes(java.nio.charset.StandardCharsets.UTF_8), null, null))
+                    .isInstanceOf(com.workpath.backend.common.BusinessException.class);
+            assertThat(storedDocs).isEmpty();
         }
     }
 

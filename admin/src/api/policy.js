@@ -28,3 +28,13 @@ export function askPolicyClause(question, topK) {
 export function previewPolicyDocument(id) {
   return request.get(`/admin/policy/documents/${id}/preview`)
 }
+
+// 上传文档文件（.txt / .md / .docx）：服务端自动提取原文后走同一套切分链路。
+// 不手动设置 Content-Type——axios 检测到 FormData 会自动带上 multipart boundary
+export function uploadPolicyFile(file, title, category) {
+  const form = new FormData()
+  form.append('file', file)
+  if (title) form.append('title', title)
+  if (category) form.append('category', category)
+  return request.post('/admin/policy/documents/upload-file', form)
+}

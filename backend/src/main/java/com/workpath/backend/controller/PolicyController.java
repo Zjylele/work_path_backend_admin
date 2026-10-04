@@ -1,6 +1,8 @@
 package com.workpath.backend.controller;
 
+import com.workpath.backend.common.BusinessException;
 import com.workpath.backend.common.Result;
+import com.workpath.backend.common.ResultCode;
 import com.workpath.backend.dto.PolicyAskDTO;
 import com.workpath.backend.dto.PolicyUploadDTO;
 import com.workpath.backend.entity.PolicyClause;
@@ -20,8 +22,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.validation.Valid;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +51,29 @@ public class PolicyController {
     @PostMapping("/documents")
     public Result<Map<String, Object>> upload(@RequestBody PolicyUploadDTO dto) {
         PolicyDocument doc = documentService.upload(dto);
+        Map<String, Object> data = new HashMap<>(4);
+        data.put("docId", doc.getDocId());
+        data.put("version", doc.getVersion());
+        data.put("title", doc.getTitle());
+        return Result.success(data);
+    }
+
+    @Operation(summary = "上传制度文档文件（.txt / .md / .docx，自动提取原文并切分）")
+    @PostMapping("/documents/upload-file")
+    public Result<Map<String, Object>> uploadFile(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(required = false) String title,
+            @RequestParam(required = false) String category) {
+        byte[] bytes;
+        try {
+            bytes = file.getBytes();
+        } catch (IOException e) {
+            // 读流失败按参数问题反馈，不让 IOException 裸抛成 500
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(),
+                    "读取上传文件失败：" + e.getMessage());
+        }
+        PolicyDocument doc = documentService.uploadFile(
+                file.getOriginalFilename(), bytes, title, category);
         Map<String, Object> data = new HashMap<>(4);
         data.put("docId", doc.getDocId());
         data.put("version", doc.getVersion());
