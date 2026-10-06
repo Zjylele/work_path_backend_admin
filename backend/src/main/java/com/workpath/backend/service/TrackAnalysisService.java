@@ -140,13 +140,53 @@ public class TrackAnalysisService {
         event.setDwellSeconds(stay.getDwellSeconds());
 
         event.setPoiName(resolvePoi(stay));
-        applySemantic(event, stay);
+        String rawAnswer = applySemantic(event, stay);
 
         event.setAiReason(buildReason(stay, event.getPoiName(), event.getSemanticLabel()));
+        event.setAnalysisTrace(buildTrace(stay, event, rawAnswer));
 
         // AI 结论一律是「待复核」，不由前端指定——否则调用方可把未复核结果标成已确认
         event.setConfirmStatus(0);
         return event;
+    }
+
+    /**
+     * 判定轨迹（analysis_trace）：把「这次是按什么判的」落库。
+     *
+     * <p>没有它，管理员在复核页只能看到一个结论（「客户拜访 60%」），
+     * 看不到它是怎么来的——而「模型输出了一堆废话、被解析成『其他』」与
+     * 「模型明确判断为『其他』」在库里长得一模一样，人无法区分该不该驳回。</p>
+     *
+     * <p>参数值取自 StayPointDetector 的实时 getter，不是手抄副本：
+     * 调参后 trace 必须跟着变，否则记录的就是一条假证据。</p>
+     *
+     * <p>用纯文本行而不是 JSON：这东西只给人看、不参与计算，而模型原文
+     * 可能含引号与换行，JSON 还得额外转义一层。</p>
+     */
+    private String buildTrace(StayPoint stay, WorkEvent event, String rawAnswer) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("params: eps=").append(stayPointDetector.getEpsMeters()).append("m")
+                .append(" minPts=").append(stayPointDetector.getMinPts())
+                .append(" minDwell=").append(stayPointDetector.getMinDwellSeconds()).append("s")
+                .append(" driftSpeed=").append(StayPointDetector.getDriftSpeedMs()).append("m/s\n");
+        sb.append("input: points=").append(stay.getPointCount())
+                .append(" dwell=").append(stay.getDwellSeconds()).append("s")
+                .append(" window=").append(stay.getStartTime()).append("~").append(stay.getEndTime())
+                .append('\n');
+        sb.append("poi: ")
+                .append(event.getPoiName() == null ? "(未解析到)" : event.getPoiName())
+                .append('\n');
+        if (rawAnswer == null) {
+            sb.append("llm: raw=(无输出或调用失败)\n");
+        } else {
+            // 压掉换行与连续空白：trace 是行结构，原文里的换行会破坏它
+            sb.append("llm: raw=").append(rawAnswer.replaceAll("\\s+", " ").trim()).append('\n');
+        }
+        sb.append("parsed: label=")
+                .append(event.getSemanticLabel() == null ? "(未标注)" : event.getSemanticLabel())
+                .append(" confidence=")
+                .append(event.getConfidence() == null ? "-" : event.getConfidence());
+        return sb.toString();
     }
 
     /** POI 解析。任何失败都只是返回空，不向上抛。 */
@@ -170,19 +210,22 @@ public class TrackAnalysisService {
      * 连分隔符都没有就整体当标签、置信度留空。把所有解析失败当作
      * 「没有标注」处理，而不是把事件丢掉。</p>
      */
-    private void applySemantic(WorkEvent event, StayPoint stay) {
+    private String applySemantic(WorkEvent event, StayPoint stay) {
         Optional<String> answer;
         try {
             answer = chatClient.chat(systemPrompt(), userPrompt(event, stay));
         } catch (Exception e) {
             log.warn("语义标注调用异常 trackId={} lat={} lng={}: {}",
                     event.getTrackId(), stay.getCenterLat(), stay.getCenterLng(), e.getMessage());
-            return;
+            return null;
         }
         if (answer.isEmpty()) {
-            return;
+            return null;
         }
         parseLabel(answer.get(), event);
+        // 把原始输出回传给 trace：解析后的 label 丢掉的信息——
+        // 模型到底说了什么、是不是一堆废话——只有原文里才有
+        return answer.get();
     }
 
     /**

@@ -112,6 +112,15 @@
             </div>
             <div v-if="e.aiReason" class="event-reason">{{ e.aiReason }}</div>
 
+            <!-- 判定轨迹：参数快照 / 输入统计 / LLM 原始输出 / 解析结果。
+                 只展示「结论」的话，没法分辨「模型明确判为其他」和
+                 「模型说了一堆废话被解析成其他」——这两者该不该驳回完全不同 -->
+            <el-collapse v-if="e.analysisTrace" class="trace" @click.stop>
+              <el-collapse-item title="判定轨迹（AI 依据什么判的）">
+                <pre class="trace-text">{{ e.analysisTrace }}</pre>
+              </el-collapse-item>
+            </el-collapse>
+
             <div v-if="e.confirmStatus === 0" class="event-actions">
               <el-button size="small" type="success" @click.stop="handleConfirm(e)">
                 确认
@@ -418,6 +427,21 @@ onMounted(load)
   font-size: 12px;
   color: #909399;
   line-height: 1.6;
+}
+
+.trace {
+  margin-top: 6px;
+  border-top: none;
+}
+
+.trace-text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #606266;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: Consolas, Monaco, monospace;
 }
 
 .event-actions {

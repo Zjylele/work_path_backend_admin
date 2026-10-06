@@ -171,6 +171,27 @@ public class StayPointDetector {
     }
 
     /**
+     * 以下四个取值暴露出来，是为了让判定轨迹（analysis_trace）能记录**真实**
+     * 参数而不是手抄一份副本——副本会在调参后与实现失配，而 trace 的全部意义
+     * 就是「当时是按什么标准判的」。
+     */
+    public int getMinDwellSeconds() {
+        return minDwellSeconds;
+    }
+
+    public double getEpsMeters() {
+        return epsMeters;
+    }
+
+    public int getMinPts() {
+        return minPts;
+    }
+
+    public static double getDriftSpeedMs() {
+        return DRIFT_SPEED_MS;
+    }
+
+    /**
      * 剔除漂移点。
      *
      * <p>判定用「相邻点速度」而非「离前一点距离」：固定位移阈值会把停留后的

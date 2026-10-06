@@ -353,3 +353,31 @@ END$
 DELIMITER ;
 CALL add_track_name();
 DROP PROCEDURE IF EXISTS add_track_name;
+
+-- ------------------------------------------------------------
+-- 7. W4 收尾：work_event.analysis_trace —— 判定轨迹
+-- ------------------------------------------------------------
+-- 把「这次判定依据了什么」落库，供人工复核时查看：参数快照、输入统计、
+-- POI、LLM 原始输出、解析结果。没有它，管理员只能看到一个结论
+-- （「客户拜访 60%」），看不到它是怎么来的——而「模型说了废话被解析成
+-- 其他」与「模型明确判断为其他」在库里长得一模一样。
+--
+-- 用 TEXT 而非 JSON 类型：内容是给人看的纯文本行，不参与计算；
+-- 模型原文可能含引号与换行，JSON 还得额外转义。
+
+DROP PROCEDURE IF EXISTS add_work_event_analysis_trace;
+DELIMITER $$
+CREATE PROCEDURE add_work_event_analysis_trace()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'work_event'
+      AND COLUMN_NAME = 'analysis_trace'
+  ) THEN
+    ALTER TABLE `work_event` ADD COLUMN `analysis_trace` TEXT DEFAULT NULL
+      COMMENT '判定轨迹：参数快照/输入统计/POI/LLM原始输出/解析结果';
+  END IF;
+END$$
+DELIMITER ;
+CALL add_work_event_analysis_trace();
+DROP PROCEDURE IF EXISTS add_work_event_analysis_trace;

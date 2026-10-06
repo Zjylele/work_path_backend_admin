@@ -57,6 +57,7 @@ class EntitySchemaConsistencyTest {
         WORK_EVENT_MAP.put("confirmStatus", "confirm_status");
         WORK_EVENT_MAP.put("confirmBy", "confirm_by");
         WORK_EVENT_MAP.put("confirmTime", "confirm_time");
+        WORK_EVENT_MAP.put("analysisTrace", "analysis_trace");
         WORK_EVENT_MAP.put("createTime", "create_time");
     }
 
@@ -79,7 +80,7 @@ class EntitySchemaConsistencyTest {
     @DisplayName("WorkEvent 实体字段全部对应 work_event 表的真实列")
     void workEventFieldsExist() {
         // 被 @TableField(exist = false) 标为非持久化的字段（username）不应在此列
-        assertThat(WORK_EVENT_MAP).hasSize(17);
+        assertThat(WORK_EVENT_MAP).hasSize(18);
         Set<String> missing = new HashSet<>();
         for (Map.Entry<String, String> e : WORK_EVENT_MAP.entrySet()) {
             if (!workEventColumns.contains(e.getValue())) {

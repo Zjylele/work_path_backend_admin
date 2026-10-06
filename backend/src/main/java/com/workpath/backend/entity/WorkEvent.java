@@ -70,6 +70,15 @@ public class WorkEvent {
 
     private LocalDateTime confirmTime;
 
+    /**
+     * 判定轨迹：这条事件是「依据什么」判出来的。
+     *
+     * <p>纯文本行格式（参数快照 / 输入统计 / POI / LLM 原始输出 / 解析结果），
+     * 供人工复核时展开查看。模型原文里的换行与连续空白会在写入前压成单个空格——
+     * 它可能很长，但丢掉原文才是最要紧的信息损失。</p>
+     */
+    private String analysisTrace;
+
     private LocalDateTime createTime;
 
     /**
