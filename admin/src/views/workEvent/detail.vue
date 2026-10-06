@@ -31,6 +31,11 @@
         <el-descriptions-item label="坐标点数">
           {{ points.length }}
         </el-descriptions-item>
+        <el-descriptions-item label="分析状态">
+          <el-tag size="small" :type="analysisTagType(track.analysisStatus)">
+            {{ analysisLabel(track.analysisStatus) }}
+          </el-tag>
+        </el-descriptions-item>
         <el-descriptions-item label="识别出的停留">
           {{ stayCount }}
         </el-descriptions-item>
@@ -76,10 +81,7 @@
             </div>
           </template>
 
-          <el-empty
-            v-if="!events.length"
-            description="该轨迹没有识别出工作事件（全是移动，没有达到停留阈值的点群）"
-          />
+          <el-empty v-if="!events.length" :description="emptyDescription" />
 
           <div
             v-for="(e, i) in events"
@@ -170,6 +172,33 @@ const overlays = computed(() =>
       label: e.semanticLabel
     }))
 )
+
+/**
+ * 空态文案按分析状态区分。
+ *
+ * 「还没分析」与「分析完确实没有停留」是两回事——只有后者是业务结论，
+ * 前者只是状态还没到。不区分的话，管理员会把「排队中」误读成「这条轨迹没问题」。
+ */
+const emptyDescription = computed(() => {
+  switch (track.value?.analysisStatus) {
+    case 0:
+      return '该轨迹尚未分析，下一轮定时任务（30 秒）会捞起它'
+    case 1:
+      return '该轨迹正在分析中，稍后刷新'
+    case 3:
+      return '该轨迹分析失败，可点右上角「重新分析」重试'
+    default:
+      return '该轨迹没有识别出工作事件（全是移动，没有达到停留阈值的点群）'
+  }
+})
+
+function analysisLabel(s) {
+  return { 0: '未分析', 1: '分析中', 2: '已完成', 3: '分析失败' }[s] ?? '—'
+}
+
+function analysisTagType(s) {
+  return { 0: 'info', 1: 'warning', 2: 'success', 3: 'danger' }[s] ?? 'info'
+}
 
 async function load() {
   loading.value = true

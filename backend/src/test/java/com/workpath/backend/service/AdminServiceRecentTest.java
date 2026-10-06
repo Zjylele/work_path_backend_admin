@@ -66,6 +66,36 @@ class AdminServiceRecentTest {
     }
 
     @Test
+    @DisplayName("轨迹详情带 analysisStatus：详情页据此区分「还没分析」与「分析完没有停留」")
+    void trackDetailCarriesAnalysisStatus() {
+        LocalDateTime start = LocalDateTime.of(2026, 9, 30, 9, 0);
+        Track track = new Track();
+        track.setId(7L);
+        track.setUserId(5L);
+        track.setName("测试轨迹");
+        track.setStartTime(start);
+        track.setEndTime(start.plusHours(1));
+        track.setStatus(2);
+        track.setDistance(1200.0);
+        track.setAnalysisStatus(2);
+
+        User owner = new User();
+        owner.setId(5L);
+        owner.setUsername("zhangsan");
+
+        Mockito.when(trackMapper.selectById(7L)).thenReturn(track);
+        Mockito.when(userMapper.selectById(5L)).thenReturn(owner);
+        Mockito.when(trackPointMapper.selectByTrackId(7L)).thenReturn(List.of());
+
+        com.workpath.backend.vo.AdminTrackDetailVO vo = service.trackDetail(7L);
+
+        assertThat(vo.getAnalysisStatus())
+                .as("管理端详情页需要它来判断空态文案：未分析/分析失败时"
+                        + "不能说成「没有识别出停留」")
+                .isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("四个列表各自组装：轨迹/待复核事件/日志/制度文档，用户名批量填充")
     void assemblesFourLists() {
         LocalDateTime now = LocalDateTime.now();

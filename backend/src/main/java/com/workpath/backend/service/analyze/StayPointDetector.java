@@ -132,7 +132,7 @@ public class StayPointDetector {
         return stays;
     }
 
-    /** 丢掉坐标或时间为 null 的点，并按时间升序排好。 */
+    /** 丢掉坐标或时间为 null、以及经纬度非法的点，并按时间升序排好。 */
     private List<TrackPoint> sanitize(List<TrackPoint> points) {
         if (points == null) {
             return List.of();
@@ -143,10 +143,31 @@ public class StayPointDetector {
                     || p.getRecordTime() == null) {
                 continue;
             }
+            if (!isValidCoordinate(p.getLatitude(), p.getLongitude())) {
+                continue;
+            }
             out.add(p);
         }
         out.sort(Comparator.comparing(TrackPoint::getRecordTime));
         return out;
+    }
+
+    /**
+     * 经纬度是否落在合法范围内。
+     *
+     * <p>必须在这一步拦掉，不能指望后面的漂移剔除：漂移判定比的是「与前一个
+     * 被接受点的速度」，而首点没有比较对象、会被无条件保留——一个 (999,999)
+     * 的首点就此成为后续所有点的基准，每个正常点相对它都是天文速度，会被逐个
+     * 判成漂移，整条轨迹一个点都不剩。</p>
+     *
+     * <p>顺带排除 (0, 0)：几内亚湾海上的这个点在几何上合法，但设备拿不到定位时
+     * 普遍上报它，属于「没有坐标」的另一种写法。</p>
+     */
+    private static boolean isValidCoordinate(double lat, double lng) {
+        if (lat < -90.0 || lat > 90.0 || lng < -180.0 || lng > 180.0) {
+            return false;
+        }
+        return !(lat == 0.0 && lng == 0.0);
     }
 
     /**

@@ -202,6 +202,36 @@ class StayPointDetectorTest {
     }
 
     // ============================================================
+    // 坐标合法性：脏坐标不能污染漂移比较基准
+    // ============================================================
+
+    @Test
+    @DisplayName("首点坐标非法（越界或 (0,0)）：整条轨迹不被误剔——脏值不能充当漂移比较基准")
+    void invalidHeadCoordinateDoesNotPoisonDriftBaseline() {
+        assertThat(staysWithDirtyHead(999.0, 999.0))
+                .as("纬度越界").hasSize(1);
+        assertThat(staysWithDirtyHead(30.657261, 999.0))
+                .as("经度越界").hasSize(1);
+        assertThat(staysWithDirtyHead(0.0, 0.0))
+                .as("(0,0)：设备未定位时的典型脏值").hasSize(1);
+    }
+
+    /**
+     * 脏坐标放在最前面，后面接一段正常的原地停留。
+     *
+     * <p>放在首位是刻意的：漂移剔除对首点没有比较对象、会无条件保留它，
+     * 于是它成了后续所有点的比较基准。若这个基准在 (999,999)，
+     * 那么每个正常点相对它的速度都是天文数字，会被逐个判成漂移——
+     * 整条轨迹一个点都不剩。这比「脏坐标本身被画到地图上」严重得多。</p>
+     */
+    private static List<StayPoint> staysWithDirtyHead(double dirtyLat, double dirtyLng) {
+        List<double[]> raw = new ArrayList<>();
+        raw.add(new double[]{dirtyLat, dirtyLng});
+        raw.addAll(stationaryCluster(30.657261, 104.066678, 121)); // 10 分钟静止
+        return detector().detect(points(raw, T0));
+    }
+
+    // ============================================================
     // 边界与退化输入
     // ============================================================
 

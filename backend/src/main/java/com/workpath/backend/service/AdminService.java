@@ -157,6 +157,7 @@ public class AdminService {
         vo.setEndTime(track.getEndTime());
         vo.setStatus(track.getStatus());
         vo.setDistance(track.getDistance());
+        vo.setAnalysisStatus(track.getAnalysisStatus());
 
         List<TrackPoint> points = trackPointMapper.selectByTrackId(track.getId());
         List<TrackPointVO> pointVos = points.stream().map(p -> {
