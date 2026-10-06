@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 /**
  * 工作事件（M4 产出的人工复核入口）。
  *
@@ -41,6 +43,12 @@ public class WorkEventController {
     @GetMapping("/{id}")
     public Result<WorkEvent> detail(@PathVariable("id") Long id) {
         return Result.success(workEventService.detail(id));
+    }
+
+    @Operation(summary = "某条轨迹的工作事件列表（分析详情页：轨迹线 + 事件时序同屏）")
+    @GetMapping("/tracks/{trackId}")
+    public Result<List<WorkEvent>> listByTrack(@PathVariable("trackId") Long trackId) {
+        return Result.success(workEventService.listByTrack(trackId));
     }
 
     @Operation(summary = "确认事件（AI 结论转为管理依据，并触发合规核查）")

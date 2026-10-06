@@ -52,9 +52,10 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="showReason(row)">查看理由</el-button>
+            <el-button link type="primary" @click="goDetail(row)">分析详情</el-button>
             <el-button
               v-if="row.confirmStatus === 0"
               link
@@ -97,6 +98,7 @@
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import {
@@ -106,6 +108,7 @@ import {
   reanalyzeTrack
 } from '@/api/workEvent'
 
+const router = useRouter()
 const loading = ref(false)
 const events = ref([])
 const confirmStatus = ref(0)
@@ -150,6 +153,11 @@ function handleSizeChange(s) {
 function showReason(row) {
   current.aiReason = row.aiReason
   reasonVisible.value = true
+}
+
+/** 跳到分析详情页：把该事件的来源轨迹、停留点与事件时序放在一屏里看 */
+function goDetail(row) {
+  router.push(`/work-events/${row.trackId}`)
 }
 
 async function handleConfirm(row) {

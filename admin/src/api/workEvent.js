@@ -16,3 +16,7 @@ export function rejectWorkEvent(id) {
 export function reanalyzeTrack(trackId) {
   return request.post(`/admin/work-events/tracks/${trackId}/reanalyze`)
 }
+// 某条轨迹的全部工作事件（分析详情页：轨迹线 + 事件时序同屏）
+export function getTrackWorkEvents(trackId) {
+  return request.get(`/admin/work-events/tracks/${trackId}`)
+}

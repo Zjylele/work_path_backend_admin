@@ -12,13 +12,22 @@ const props = defineProps({
   points: {
     type: Array,
     default: () => []
+  },
+  // 附加标记（停留点等）：[{ id, latitude, longitude, color, label }]
+  // 不传时行为与之前完全一致（只画轨迹线与起终点）
+  overlays: {
+    type: Array,
+    default: () => []
   }
 })
+
+const emit = defineEmits(['overlay-click'])
 
 const mapContainer = ref(null)
 let map = null
 let polyline = null
 let markers = []
+let overlayMarkers = []
 
 // 加载高德 JS API
 async function loadMap() {
@@ -88,6 +97,10 @@ function clearOverlays() {
     markers.forEach((m) => m.remove())
     markers = []
   }
+  if (overlayMarkers.length) {
+    overlayMarkers.forEach((m) => m.remove())
+    overlayMarkers = []
+  }
   if (polyline) {
     map.remove(polyline)
     polyline = null
@@ -127,8 +140,37 @@ function draw(points) {
   markers.push(start, end)
   map.add(markers)
 
-  // 自适应视野
-  map.setFitView([polyline, ...markers], false, [60, 60, 60, 60])
+  drawOverlays()
+
+  // 自适应视野（含停留点标记，否则它们可能落在视野外）
+  map.setFitView([polyline, ...markers, ...overlayMarkers], false, [60, 60, 60, 60])
+}
+
+/**
+ * 绘制附加标记（停留点）。
+ *
+ * <p>颜色由调用方按复核状态传入——待确认/已确认/已驳回三种状态在同一张图上
+ * 要能一眼分开，这是这一屏存在的理由。</p>
+ */
+function drawOverlays() {
+  if (!map) return
+  const list = (props.overlays || []).filter(
+    (o) => o && o.latitude != null && o.longitude != null
+  )
+  overlayMarkers = list.map((o) => {
+    const [lng, lat] = wgs84ToGcj02(o.latitude, o.longitude)
+    const marker = new AMap.Marker({
+      position: [lng, lat],
+      content: `<div class="stay-marker" style="background:${o.color || '#1890ff'}"></div>`,
+      offset: new AMap.Pixel(-9, -9),
+      zIndex: 120
+    })
+    marker.on('click', () => emit('overlay-click', o))
+    return marker
+  })
+  if (overlayMarkers.length) {
+    map.add(overlayMarkers)
+  }
 }
 
 async function init() {
@@ -162,6 +204,31 @@ watch(
   { deep: true }
 )
 
+// 停留点变化时只重绘标记，不重画轨迹线（复核操作后状态色要立即变）
+watch(
+  () => props.overlays,
+  () => {
+    if (overlayMarkers.length) {
+      overlayMarkers.forEach((m) => m.remove())
+      overlayMarkers = []
+    }
+    drawOverlays()
+  },
+  { deep: true }
+)
+
+/**
+ * 定位到某个坐标。点击右侧事件列表时调用，让地图跟着指过去。
+ * 入参是 WGS-84 原始坐标（与 points/overlays 同源），内部做坐标系转换。
+ */
+function focusOn(lat, lng) {
+  if (!map || lat == null || lng == null) return
+  const [gcjLng, gcjLat] = wgs84ToGcj02(lat, lng)
+  map.setZoomAndCenter(17, [gcjLng, gcjLat])
+}
+
+defineExpose({ focusOn })
+
 onBeforeUnmount(() => {
   if (map) {
     map.destroy()
@@ -194,5 +261,20 @@ onBeforeUnmount(() => {
 
 .track-marker.end {
   background-color: #f5222d;
+}
+
+/* 停留点标记：加白色描边与阴影，压在轨迹线上也能看清 */
+.stay-marker {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.stay-marker:hover {
+  transform: scale(1.25);
 }
 </style>

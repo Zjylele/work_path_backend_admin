@@ -13,6 +13,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -220,6 +221,33 @@ class WorkEventServiceTest {
         assertThatThrownBy(() -> service.reanalyze(7L))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("不存在");
+    }
+
+    // ============================================================
+    // 按轨迹查询（W8 分析详情页用）
+    // ============================================================
+
+    @Test
+    @DisplayName("按轨迹查事件：返回该轨迹的全部事件，供详情页做时序展示")
+    void listByTrackReturnsEventsOfTrack() {
+        WorkEvent first = event(0);
+        WorkEvent second = event(0);
+        second.setEventId(2L);
+        second.setStartTime(first.getStartTime().plusHours(2));
+        when(workEventMapper.selectList(any())).thenReturn(List.of(first, second));
+
+        List<WorkEvent> result = service.listByTrack(7L);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).getEventId()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("按轨迹查事件：该轨迹没有事件时返回空列表，不抛异常")
+    void listByTrackReturnsEmptyWhenNoEvents() {
+        when(workEventMapper.selectList(any())).thenReturn(List.of());
+
+        assertThat(service.listByTrack(99L)).isEmpty();
     }
 
     // ============================================================

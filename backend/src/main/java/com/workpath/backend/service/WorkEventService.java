@@ -111,6 +111,20 @@ public class WorkEventService {
     }
 
     /**
+     * 某条轨迹的全部工作事件，按开始时间升序。
+     *
+     * <p>供管理端「分析详情」页使用：那一页要把轨迹线、停留点、事件时序放在同一屏里，
+     * 分页列表接口（按 confirmStatus 全局筛选）满足不了「只取这一条轨迹」的需求。</p>
+     *
+     * <p>不分页：一条轨迹通常只产出 1-3 个停留事件，分页只会徒增前端的状态管理。</p>
+     */
+    public List<WorkEvent> listByTrack(Long trackId) {
+        return workEventMapper.selectList(new LambdaQueryWrapper<WorkEvent>()
+                .eq(WorkEvent::getTrackId, trackId)
+                .orderByAsc(WorkEvent::getStartTime));
+    }
+
+    /**
      * 人工确认某条事件。
      *
      * <p>这是「AI 结论 → 管理依据」那一步的开关。confirm_status 从 0 变 1

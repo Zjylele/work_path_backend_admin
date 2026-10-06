@@ -57,6 +57,13 @@ const routes = [
         meta: { title: '工作事件复核', icon: 'Calendar' }
       },
       {
+        // 分析详情：轨迹线 + 停留点 + 事件时序同屏（复核判断的上下文都在这）
+        path: 'work-events/:trackId',
+        name: 'WorkEventDetail',
+        component: () => import('@/views/workEvent/detail.vue'),
+        meta: { title: '分析详情', icon: 'MapLocation', activeMenu: '/work-events' }
+      },
+      {
         path: 'rules',
         name: 'RuleList',
         component: () => import('@/views/rule/index.vue'),
