@@ -22,6 +22,10 @@
 -- 症状是 INSERT 报 "Incorrect string value ... for column 'evidence'"
 SET NAMES utf8mb4;
 
+-- 幂等：先清工单再清结论（工单通过 check_id 引用结论）
+DELETE o FROM rectification_order o
+  JOIN compliance_check c ON o.check_id = c.check_id
+  WHERE c.work_date = '2099-01-01';
 DELETE FROM compliance_check WHERE work_date = '2099-01-01';
 
 INSERT INTO compliance_check
@@ -51,6 +55,36 @@ VALUES
   (2, '2099-01-01', NULL, 3, 2, 'DEMO-当日同类（客户拜访）停留 5 次，达到阈值 5 次', '模型判断为频次超限，引用的条款编号无法在制度库中定位。', '7.7', 0, NOW());
 
 -- ============================================================
+-- 整改工单：让员工侧「我的工单」页有可演示的数据
+-- ------------------------------------------------------------
+-- 结论（compliance_check）与工单（rectification_order）是两张表：
+-- 只插结论的话，手机端工单页仍然是空的。这里从刚插入的演示结论里挑
+-- 4 条派工单，覆盖员工侧的两个动作与管理员闭环：
+--   3 条「待处理」→ 演示「提交处理说明」(0→1) 与「申诉」(0→3)
+--   1 条「处理中」→ 演示管理员「确认整改」(1→2)
+--
+-- check_id 用子查询取，不写死自增 ID——脚本重跑后 ID 会变；
+-- 且 uk_order_check 保证一条结论至多一张工单。
+-- ============================================================
+
+INSERT INTO rectification_order
+  (check_id, user_id, content, status, assign_by, assign_time, handle_note, handle_time, create_time)
+SELECT c.check_id, c.user_id, CONCAT('单次停留超时：', c.evidence), 0, 1, NOW(), NULL, NULL, NOW()
+FROM compliance_check c
+WHERE c.work_date = '2099-01-01' AND c.result = 1
+ORDER BY c.check_id
+LIMIT 3;
+
+INSERT INTO rectification_order
+  (check_id, user_id, content, status, assign_by, assign_time, handle_note, handle_time, create_time)
+SELECT c.check_id, c.user_id, CONCAT('单次停留超时：', c.evidence), 1, 1, NOW(),
+       '已向主管说明情况并补交报备', NOW(), NOW()
+FROM compliance_check c
+WHERE c.work_date = '2099-01-01' AND c.result = 1
+ORDER BY c.check_id DESC
+LIMIT 1;
+
+-- ============================================================
 -- 执行后核对（预期：给出引用 25、引用有效 22、引用无效 3、有效率 88%）
 -- ============================================================
 -- SELECT
@@ -64,4 +98,9 @@ VALUES
 -- ============================================================
 -- 清理（演示结束后执行，删除全部演示样本）
 -- ============================================================
+-- 先删工单再删结论：工单通过 check_id 引用结论，
+-- 反过来删会留下指向不存在结论的悬空工单
+-- DELETE o FROM rectification_order o
+--   JOIN compliance_check c ON o.check_id = c.check_id
+--   WHERE c.work_date = '2099-01-01';
 -- DELETE FROM compliance_check WHERE work_date = '2099-01-01';
