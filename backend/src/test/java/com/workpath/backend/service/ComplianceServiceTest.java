@@ -195,6 +195,26 @@ class ComplianceServiceTest {
     }
 
     @Test
+    @DisplayName("返回值＝本次新增结论数：调用方据此区分「未命中」与「核查跑过」")
+    void returnsCreatedCheckCount() {
+        when(ruleMapper.selectList(any())).thenReturn(List.of(durationRule(10L)));
+        when(clauseMapper.selectById(10L)).thenReturn(clause(10L, 5L, "3.1"));
+        when(clauseMapper.selectCount(any())).thenReturn(1L);
+        when(chatClient.chat(anyString(), anyString())).thenReturn(Optional.of(
+                "{\"reason\":\"单次停留超时\",\"clause_code\":\"3.2\"}"));
+
+        assertThat(service.onEventConfirmed(confirmedStay())).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("无启用规则时返回 0——调用方提示「未命中规则」而非「核查失败」")
+    void returnsZeroWithoutRules() {
+        when(ruleMapper.selectList(any())).thenReturn(List.of());
+
+        assertThat(service.onEventConfirmed(confirmedStay())).isZero();
+    }
+
+    @Test
     @DisplayName("ABNORMAL 扫描：无停留的已分析轨迹落 result=2 结论，不自动生成工单")
     void abnormalScanCreatesManualReviewCheck() {
         ComplianceRule rule = new ComplianceRule();

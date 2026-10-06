@@ -38,6 +38,15 @@
           <el-icon><Calendar /></el-icon>
           <span>工作事件复核</span>
         </el-menu-item>
+        <!-- 菜单顺序对应业务链路：复核 → 核查结论/工单 → 规则配置 -->
+        <el-menu-item index="/orders">
+          <el-icon><Tickets /></el-icon>
+          <span>整改工单</span>
+        </el-menu-item>
+        <el-menu-item index="/rules">
+          <el-icon><SetUp /></el-icon>
+          <span>合规规则</span>
+        </el-menu-item>
         <!-- 模型接入配置：仅超级管理员可见，普通管理员看不到入口 -->
         <el-menu-item v-if="isSuperAdmin" index="/model-providers">
           <el-icon><Connection /></el-icon>

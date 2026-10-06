@@ -43,11 +43,12 @@ public class WorkEventController {
         return Result.success(workEventService.detail(id));
     }
 
-    @Operation(summary = "确认事件（AI 结论转为管理依据）")
+    @Operation(summary = "确认事件（AI 结论转为管理依据，并触发合规核查）")
     @PostMapping("/{id}/confirm")
-    public Result<Void> confirm(@PathVariable("id") Long id) {
-        workEventService.confirm(id);
-        return Result.success();
+    public Result<WorkEventService.ConfirmResult> confirm(@PathVariable("id") Long id) {
+        // 返回核查执行情况：核查失败时确认仍然成功，但调用方要能区分提示，
+        // 不能像以前那样一律显示「已确认」而掩盖核查静默失效
+        return Result.success(workEventService.confirm(id));
     }
 
     @Operation(summary = "驳回事件")

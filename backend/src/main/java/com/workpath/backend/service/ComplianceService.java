@@ -68,25 +68,34 @@ public class ComplianceService {
      *
      * <p>幂等：事件级规则按 (rule, work_event) 去重，FREQUENCY 按
      * (rule, user, work_date) 去重——重复确认同一条事件不会产生重复结论。</p>
+     *
+     * @return 本次新增的核查结论条数；0 表示未命中任何规则（含无启用规则）。
+     *         调用方据此给管理员可见反馈——核查"跑了但没命中"和
+     *         "压根没跑成"是两件事，不能都表现为沉默
      */
-    public void onEventConfirmed(WorkEvent event) {
+    public int onEventConfirmed(WorkEvent event) {
         List<ComplianceRule> rules = enabledRules();
         if (rules.isEmpty() || event.getStartTime() == null) {
-            return;
+            return 0;
         }
         LocalDate workDate = event.getStartTime().toLocalDate();
         List<WorkEvent> dayStays = confirmedStaysOfDay(event.getUserId(), workDate);
 
+        int created = 0;
         for (ComplianceRule rule : rules) {
             if (alreadyChecked(rule, event, workDate)) {
                 continue;
             }
-            ruleEngine.evaluate(event, rule, dayStays).ifPresent(evidence -> {
-                log.info("规则命中 ruleCode={} eventId={} : {}", rule.getRuleCode(),
-                        event.getEventId(), evidence);
-                checkAndStore(event, rule, evidence);
-            });
+            Optional<String> evidence = ruleEngine.evaluate(event, rule, dayStays);
+            if (evidence.isEmpty()) {
+                continue;
+            }
+            log.info("规则命中 ruleCode={} eventId={} : {}", rule.getRuleCode(),
+                    event.getEventId(), evidence.get());
+            checkAndStore(event, rule, evidence.get());
+            created++;
         }
+        return created;
     }
 
     /**

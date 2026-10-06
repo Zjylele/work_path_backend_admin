@@ -158,8 +158,18 @@ async function handleConfirm(row) {
     '确认事件',
     { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' }
   )
-  await confirmWorkEvent(row.eventId)
-  ElMessage.success('已确认')
+  // 后端回传核查执行情况：确认本身已成功，但核查可能没跑成。
+  // 不能一律提示「已确认」——那样管理员会以为结论已产生，
+  // 到核查结论页却什么都找不到。
+  const res = await confirmWorkEvent(row.eventId)
+  const result = res.data || {}
+  if (result.checkFailed) {
+    ElMessage.warning('已确认，但合规核查执行失败，请到「整改工单 → 核查结论」核对，或联系管理员查看日志')
+  } else if (result.newChecks > 0) {
+    ElMessage.success(`已确认，合规核查新增 ${result.newChecks} 条结论`)
+  } else {
+    ElMessage.success('已确认，合规核查未命中规则')
+  }
   await load()
 }
 
