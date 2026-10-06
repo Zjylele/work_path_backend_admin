@@ -66,6 +66,13 @@ public class WorkEventController {
         return Result.success();
     }
 
+    @Operation(summary = "撤销确认（已确认 → 待确认；存在未闭环工单时拒绝）")
+    @PostMapping("/{id}/revoke")
+    public Result<Void> revoke(@PathVariable("id") Long id) {
+        workEventService.revoke(id);
+        return Result.success();
+    }
+
     @Operation(summary = "触发轨迹重新分析（下一轮定时任务执行）")
     @PostMapping("/tracks/{trackId}/reanalyze")
     public Result<Void> reanalyze(@PathVariable("trackId") Long trackId) {

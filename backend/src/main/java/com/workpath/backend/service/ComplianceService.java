@@ -179,6 +179,26 @@ public class ComplianceService {
         return insertOrder(check, UserContext.getUserId());
     }
 
+    /**
+     * 该事件是否已产生「未闭环」的整改工单。
+     *
+     * <p>撤销确认的前置检查：工单一旦下发，撤销确认会让它失去依据——工单的
+     * content 来自核查结论，而结论挂在事件上。已闭环的工单不算：它是走完流程
+     * 的历史记录，撤销事件不该把它重新翻出来。</p>
+     */
+    public boolean hasOpenOrderForEvent(Long eventId) {
+        List<ComplianceCheck> checks = checkMapper.selectList(
+                new LambdaQueryWrapper<ComplianceCheck>()
+                        .eq(ComplianceCheck::getWorkEventId, eventId));
+        if (checks.isEmpty()) {
+            return false;
+        }
+        List<Long> checkIds = checks.stream().map(ComplianceCheck::getCheckId).toList();
+        return count(orderMapper.selectCount(new LambdaQueryWrapper<RectificationOrder>()
+                .in(RectificationOrder::getCheckId, checkIds)
+                .ne(RectificationOrder::getStatus, RectificationOrderService.STATUS_CLOSED))) > 0;
+    }
+
     private void checkAndStore(WorkEvent event, ComplianceRule rule, String evidence) {
         // 第 2 步：命中后调 LLM 生成说明 + 引用条款编号（强制 JSON）
         AiJudgment judgment = judge(event, rule, evidence);

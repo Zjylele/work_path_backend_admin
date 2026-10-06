@@ -172,6 +172,44 @@ public class WorkEventService {
         return result;
     }
 
+    /**
+     * 撤销确认：已确认 → 待确认。
+     *
+     * <p>补上「误点确认」的正路。此前把 1→2（驳回）堵死之后，误确认只剩改库
+     * 一条路可退——那是把问题从「明确报错」变成「静默绕过系统」。</p>
+     *
+     * <p><b>前置条件是工单</b>：确认会触发合规核查并可能生成整改工单，而工单的
+     * content 来自核查结论、结论挂在事件上。所以只要存在未闭环工单，撤销就必须
+     * 拒绝——否则那张工单会指向一条「未确认」的事件。已闭环的工单不影响，
+     * 它是走完流程的历史记录。</p>
+     *
+     * <p>核查结论本身不删除：它记录了「AI 曾经这么判过」，是复核历史的组成部分。
+     * 撤销只把事件退回待确认，让管理员重新判断。</p>
+     */
+    public void revoke(Long eventId) {
+        WorkEvent event = workEventMapper.selectById(eventId);
+        if (event == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "工作事件不存在");
+        }
+        if (!isConfirmStatus(event, CONFIRM_APPROVED)) {
+            throw new BusinessException(ResultCode.CONFLICT.getCode(),
+                    "只有已确认的事件可以撤销（当前状态 " + event.getConfirmStatus() + "）");
+        }
+        if (complianceService.hasOpenOrderForEvent(eventId)) {
+            throw new BusinessException(ResultCode.CONFLICT.getCode(),
+                    "该事件已产生未闭环的整改工单，撤销会让工单失去依据；请先处理工单");
+        }
+
+        WorkEvent patch = new WorkEvent();
+        patch.setEventId(eventId);
+        patch.setConfirmStatus(CONFIRM_PENDING);
+        // confirm_by / confirm_time 不清空：它们是审计痕迹，展示层在待确认状态下
+        // 不渲染即可。（另：MyBatis-Plus 的 updateById 对 null 字段默认跳过更新，
+        // 想真清空得换 LambdaUpdateWrapper——这里本就不需要清）
+        workEventMapper.updateById(patch);
+        log.info("工作事件已撤销确认 eventId={} 操作人={}", eventId, UserContext.getUserId());
+    }
+
     /** 复核状态比对：confirmStatus 为 null（历史脏数据）时一律按不匹配处理。 */
     private static boolean isConfirmStatus(WorkEvent event, int status) {
         return event.getConfirmStatus() != null && event.getConfirmStatus() == status;

@@ -52,7 +52,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="280" fixed="right">
+        <el-table-column label="操作" width="320" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="showReason(row)">查看理由</el-button>
             <el-button link type="primary" @click="goDetail(row)">分析详情</el-button>
@@ -71,6 +71,13 @@
               @click="handleReject(row)"
             >
               驳回
+            </el-button>
+            <el-button
+              v-if="row.confirmStatus === 1"
+              link
+              @click="handleRevoke(row)"
+            >
+              撤销确认
             </el-button>
             <el-button link type="warning" @click="handleReanalyze(row)">重新分析</el-button>
           </template>
@@ -105,7 +112,8 @@ import {
   getWorkEvents,
   confirmWorkEvent,
   rejectWorkEvent,
-  reanalyzeTrack
+  reanalyzeTrack,
+  revokeWorkEvent
 } from '@/api/workEvent'
 
 const router = useRouter()
@@ -189,6 +197,18 @@ async function handleReject(row) {
   )
   await rejectWorkEvent(row.eventId)
   ElMessage.success('已驳回')
+  await load()
+}
+
+/** 撤销确认：误点确认的正路。存在未闭环工单时后端拒绝并给出原因 */
+async function handleRevoke(row) {
+  await ElMessageBox.confirm(
+    `撤销事件 #${row.eventId} 的确认？该事件将退回「待确认」。\n注意：已产生的核查结论会保留，不会删除。`,
+    '撤销确认',
+    { type: 'warning', confirmButtonText: '撤销', cancelButtonText: '取消' }
+  )
+  await revokeWorkEvent(row.eventId)
+  ElMessage.success('已撤销确认，事件退回待确认')
   await load()
 }
 

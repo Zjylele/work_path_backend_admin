@@ -137,6 +137,48 @@ class WorkEventServiceTest {
     }
 
     // ============================================================
+    // 撤销确认
+    // ============================================================
+
+    @Test
+    @DisplayName("已确认 --撤销--> 待确认，复核人与时间一并清空")
+    void revokeApprovedResetsToPending() {
+        when(workEventMapper.selectById(1L)).thenReturn(event(1));
+        when(complianceService.hasOpenOrderForEvent(1L)).thenReturn(false);
+
+        service.revoke(1L);
+
+        ArgumentCaptor<WorkEvent> cap = ArgumentCaptor.forClass(WorkEvent.class);
+        verify(workEventMapper).updateById(cap.capture());
+        assertThat(cap.getValue().getConfirmStatus()).isZero();
+        // confirm_by / confirm_time 刻意保留：它们是「这条被谁确认过」的审计痕迹。
+        // 展示层在待确认状态下不渲染即可，不必为了界面干净抹掉历史
+    }
+
+    @Test
+    @DisplayName("非法：未确认的事件不能撤销（只有已确认的才谈得上撤销）")
+    void revokePendingRejected() {
+        when(workEventMapper.selectById(1L)).thenReturn(event(0));
+
+        assertThatThrownBy(() -> service.revoke(1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("已确认");
+        verify(workEventMapper, never()).updateById(any(WorkEvent.class));
+    }
+
+    @Test
+    @DisplayName("非法：已产生未闭环工单时不能撤销（撤销会让工单失去依据）")
+    void revokeBlockedByOpenOrder() {
+        when(workEventMapper.selectById(1L)).thenReturn(event(1));
+        when(complianceService.hasOpenOrderForEvent(1L)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.revoke(1L))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("工单");
+        verify(workEventMapper, never()).updateById(any(WorkEvent.class));
+    }
+
+    // ============================================================
     // 驳回
     // ============================================================
 

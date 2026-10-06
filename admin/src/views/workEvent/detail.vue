@@ -120,6 +120,9 @@
                 驳回
               </el-button>
             </div>
+            <div v-else-if="e.confirmStatus === 1" class="event-actions">
+              <el-button size="small" @click.stop="handleRevoke(e)">撤销确认</el-button>
+            </div>
           </div>
         </el-card>
       </el-col>
@@ -138,7 +141,8 @@ import {
   confirmWorkEvent,
   getTrackWorkEvents,
   reanalyzeTrack,
-  rejectWorkEvent
+  rejectWorkEvent,
+  revokeWorkEvent
 } from '@/api/workEvent'
 
 const route = useRoute()
@@ -259,6 +263,23 @@ async function handleReject(e) {
   )
   await rejectWorkEvent(e.eventId)
   ElMessage.success('已驳回')
+  await load()
+}
+
+/**
+ * 撤销确认：误点确认的正路。
+ *
+ * 存在未闭环工单时后端会拒绝并说明原因——那种情况下撤销会让工单失去依据，
+ * 提示由 request 拦截器统一弹出后端文案。
+ */
+async function handleRevoke(e) {
+  await ElMessageBox.confirm(
+    `撤销事件 #${e.eventId} 的确认？该事件将退回「待确认」，可重新判断。\n注意：已产生的核查结论会保留，不会删除。`,
+    '撤销确认',
+    { type: 'warning', confirmButtonText: '撤销', cancelButtonText: '取消' }
+  )
+  await revokeWorkEvent(e.eventId)
+  ElMessage.success('已撤销确认，事件退回待确认')
   await load()
 }
 
