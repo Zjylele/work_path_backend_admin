@@ -1,6 +1,7 @@
 package com.workpath.backend.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.workpath.backend.dto.ClauseVerificationRow;
 import com.workpath.backend.entity.ComplianceCheck;
 import com.workpath.backend.entity.ComplianceRule;
 import com.workpath.backend.entity.User;
@@ -65,5 +66,44 @@ public class ComplianceCheckService {
             c.setUsername(names.get(c.getUserId()));
         });
         return checks;
+    }
+
+    /**
+     * 条款引用有效率统计（答辩用的量化指标）。
+     *
+     * <p>分母只算「模型实际给出引用」的条数。ABNORMAL 这类没有条款锚点的结论
+     * 从未参与回查，算进分母只会把有效率稀释成一个不说明问题的数字。</p>
+     *
+     * @return 统计结果；一次引用都没有时 validRate 为 null（不做除零）
+     */
+    public ClauseVerificationStats clauseVerificationStats() {
+        ClauseVerificationRow row = checkMapper.selectClauseVerificationRow();
+        long total = count(row == null ? null : row.getTotal());
+        long given = count(row == null ? null : row.getCitationGiven());
+        long valid = count(row == null ? null : row.getCitationValid());
+        long invalid = count(row == null ? null : row.getCitationInvalid());
+        Double rate = given == 0 ? null : (double) valid / given;
+        return new ClauseVerificationStats(total, given, valid, invalid,
+                Math.max(0L, total - given), rate);
+    }
+
+    /** selectCount/sum 的判空包装：空表时 SUM 返回 NULL。 */
+    private static long count(Long value) {
+        return value == null ? 0 : value;
+    }
+
+    /**
+     * 引用有效率的统计结果。
+     *
+     * @param total            结论总数
+     * @param citationGiven    模型给出引用的条数（分子分母的基数）
+     * @param citationValid    引用通过回查的条数
+     * @param citationInvalid  引用无效（编号不存在于制度库）的条数
+     * @param withoutCitation  没有条款锚点的条数（ABNORMAL、模型未给出编号）
+     * @param validRate        引用有效率；无引用时为 null
+     */
+    public record ClauseVerificationStats(long total, long citationGiven, long citationValid,
+                                          long citationInvalid, long withoutCitation,
+                                          Double validRate) {
     }
 }

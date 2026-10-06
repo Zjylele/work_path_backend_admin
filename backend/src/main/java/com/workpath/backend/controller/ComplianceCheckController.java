@@ -41,6 +41,12 @@ public class ComplianceCheckController {
         return Result.success(checkService.list(userId, workDate, result));
     }
 
+    @Operation(summary = "条款引用有效率统计（分母只算模型实际给出引用的条数）")
+    @GetMapping("/stats")
+    public Result<ComplianceCheckService.ClauseVerificationStats> stats() {
+        return Result.success(checkService.clauseVerificationStats());
+    }
+
     @Operation(summary = "扫描异常轨迹（ABNORMAL：已分析但无任何停留）")
     @PostMapping("/scan-abnormal")
     public Result<Map<String, Integer>> scanAbnormal() {

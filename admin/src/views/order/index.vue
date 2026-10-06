@@ -57,6 +57,20 @@
 
         <!-- ============ 核查结论 ============ -->
         <el-tab-pane label="核查结论" name="checks">
+          <!-- 引用有效率：这是全系统唯一能拿出的量化结论，放在最显眼处 -->
+          <div v-if="stats" class="stats-bar">
+            <span class="stats-label">条款引用有效率</span>
+            <el-tag :type="rateTagType(stats.validRate)" size="large">
+              {{ rateText(stats.validRate) }}
+            </el-tag>
+            <span class="stats-detail">
+              模型共给出引用 {{ stats.citationGiven }} 次：通过回查
+              {{ stats.citationValid }} 次，编号不存在被拦下转人工
+              {{ stats.citationInvalid }} 次；另有 {{ stats.withoutCitation }} 条结论
+              没有条款锚点（ABNORMAL 类，不计入分母）
+            </span>
+          </div>
+
           <div class="toolbar">
             <el-select v-model="checkResult" placeholder="核查结果" clearable style="width: 150px" @change="loadChecks">
               <el-option label="合规" :value="0" />
@@ -137,6 +151,7 @@ import { Refresh } from '@element-plus/icons-vue'
 import {
   closeOrder,
   createCheckOrder,
+  getCheckStats,
   getChecks,
   getOrders,
   reviewOrder,
@@ -155,6 +170,7 @@ const checksLoading = ref(false)
 const checks = ref([])
 const checkResult = ref('')
 const scanning = ref(false)
+const stats = ref(null)
 
 const reviewVisible = ref(false)
 const reviewForm = reactive({ orderId: null, accept: false, reviewNote: '' })
@@ -179,6 +195,28 @@ async function loadChecks() {
   } finally {
     checksLoading.value = false
   }
+}
+
+async function loadStats() {
+  try {
+    const res = await getCheckStats()
+    stats.value = res.data
+  } catch (e) {
+    // 统计拿不到不该影响列表——它是锦上添花的指标，不是页面主体
+    stats.value = null
+  }
+}
+
+function rateText(rate) {
+  if (rate == null) return '暂无引用'
+  return (rate * 100).toFixed(0) + '%'
+}
+
+function rateTagType(rate) {
+  if (rate == null) return 'info'
+  if (rate >= 0.9) return 'success'
+  if (rate >= 0.7) return 'warning'
+  return 'danger'
 }
 
 async function handleClose(row) {
@@ -251,6 +289,7 @@ function resultTag(r) {
 onMounted(() => {
   loadOrders()
   loadChecks()
+  loadStats()
 })
 </script>
 
@@ -259,6 +298,26 @@ onMounted(() => {
   display: flex;
   gap: 12px;
   margin-bottom: 16px;
+}
+.stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background-color: #f5faff;
+  border: 1px solid #d6e8ff;
+  border-radius: 4px;
+  flex-wrap: wrap;
+}
+.stats-label {
+  font-weight: 600;
+  color: #303133;
+}
+.stats-detail {
+  font-size: 12px;
+  color: #606266;
+  line-height: 1.6;
 }
 .hint-text {
   font-size: 12px;

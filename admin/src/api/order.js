@@ -7,6 +7,10 @@ export function getChecks(params) {
 export function scanAbnormalTracks() {
   return request.post('/admin/compliance-checks/scan-abnormal')
 }
+// 条款引用有效率统计（分母只算模型实际给出引用的条数）
+export function getCheckStats() {
+  return request.get('/admin/compliance-checks/stats')
+}
 export function createCheckOrder(id) {
   return request.post(`/admin/compliance-checks/${id}/order`)
 }
