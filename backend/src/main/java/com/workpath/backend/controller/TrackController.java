@@ -5,6 +5,7 @@ import com.workpath.backend.dto.TrackUploadDTO;
 import com.workpath.backend.service.TrackService;
 import com.workpath.backend.vo.PageVO;
 import com.workpath.backend.vo.TrackDetailVO;
+import com.workpath.backend.vo.TrackEventVO;
 import com.workpath.backend.vo.TrackListVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.Map;
 
 @Tag(name = "轨迹", description = "手机端轨迹上传、列表、详情、删除")
@@ -49,6 +51,12 @@ public class TrackController {
     @GetMapping("/{id}")
     public Result<TrackDetailVO> detail(@PathVariable Long id) {
         return Result.success(trackService.detail(id));
+    }
+
+    @Operation(summary = "轨迹的语义标注结果")
+    @GetMapping("/{id}/events")
+    public Result<List<TrackEventVO>> events(@PathVariable("id") Long id) {
+        return Result.success(trackService.listEvents(id));
     }
 
     @Operation(summary = "删除轨迹")

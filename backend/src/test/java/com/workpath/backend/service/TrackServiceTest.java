@@ -5,10 +5,13 @@ import com.workpath.backend.dto.TrackUploadDTO;
 import com.workpath.backend.entity.Track;
 import com.workpath.backend.entity.TrackPoint;
 import com.workpath.backend.entity.User;
+import com.workpath.backend.entity.WorkEvent;
 import com.workpath.backend.interceptor.UserContext;
 import com.workpath.backend.mapper.TrackMapper;
 import com.workpath.backend.mapper.TrackPointMapper;
+import com.workpath.backend.mapper.WorkEventMapper;
 import com.workpath.backend.vo.TrackDetailVO;
+import com.workpath.backend.vo.TrackEventVO;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,6 +23,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * 轨迹服务单元测试（Mockito 顶替两个 Mapper）。
@@ -32,13 +36,15 @@ class TrackServiceTest {
 
     private TrackMapper trackMapper;
     private TrackPointMapper trackPointMapper;
+    private WorkEventMapper workEventMapper;
     private TrackService service;
 
     @BeforeEach
     void setUp() {
         trackMapper = Mockito.mock(TrackMapper.class);
         trackPointMapper = Mockito.mock(TrackPointMapper.class);
-        service = new TrackService(trackMapper, trackPointMapper);
+        workEventMapper = Mockito.mock(WorkEventMapper.class);
+        service = new TrackService(trackMapper, trackPointMapper, workEventMapper);
 
         // insert 时回填自增 id，模拟 MyBatis-Plus 的行为
         Mockito.lenient().when(trackMapper.insert(Mockito.any(Track.class))).thenAnswer(inv -> {
@@ -132,5 +138,50 @@ class TrackServiceTest {
 
         assertThat(vo.getName()).isEqualTo("晨间配送路线");
         assertThat(vo.getId()).isEqualTo(5L);
+    }
+
+    @Test
+    @DisplayName("员工能取到自有轨迹的语义标注结果")
+    void listEventsReturnsOwnTrackEvents() {
+        Track track = new Track();
+        track.setId(5L);
+        track.setUserId(7L);
+        Mockito.when(trackMapper.selectById(5L)).thenReturn(track);
+
+        WorkEvent event = new WorkEvent();
+        event.setEventId(11L);
+        event.setTrackId(5L);
+        event.setEventType("STAY");
+        event.setStartTime(LocalDateTime.of(2026, 10, 4, 8, 30));
+        event.setEndTime(LocalDateTime.of(2026, 10, 4, 8, 36, 45));
+        event.setDwellSeconds(405);
+        event.setPoiName("武侯区恒大珺临阁");
+        event.setSemanticLabel("驻点办公");
+        event.setConfidence(0.5);
+        event.setAiReason("停留时长超过阈值的 6.8 分钟");
+        event.setConfirmStatus(0);
+        Mockito.when(workEventMapper.selectList(Mockito.any())).thenReturn(List.of(event));
+
+        List<TrackEventVO> events = service.listEvents(5L);
+
+        assertThat(events).hasSize(1);
+        assertThat(events.get(0).getEventId()).isEqualTo(11L);
+        assertThat(events.get(0).getSemanticLabel()).isEqualTo("驻点办公");
+        assertThat(events.get(0).getDwellSeconds()).isEqualTo(405);
+        assertThat(events.get(0).getPoiName()).isEqualTo("武侯区恒大珺临阁");
+        assertThat(events.get(0).getConfirmStatus()).isZero();
+    }
+
+    @Test
+    @DisplayName("取他人轨迹的语义标注被拒，且不查事件表")
+    void listEventsRejectsOtherUsersTrack() {
+        Track track = new Track();
+        track.setId(5L);
+        track.setUserId(999L);
+        Mockito.when(trackMapper.selectById(5L)).thenReturn(track);
+
+        assertThatThrownBy(() -> service.listEvents(5L))
+                .isInstanceOf(com.workpath.backend.common.BusinessException.class);
+        Mockito.verify(workEventMapper, Mockito.never()).selectList(Mockito.any());
     }
 }

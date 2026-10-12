@@ -10,10 +10,13 @@ import com.workpath.backend.dto.TrackUploadDTO;
 import com.workpath.backend.entity.Track;
 import com.workpath.backend.entity.TrackPoint;
 import com.workpath.backend.entity.User;
+import com.workpath.backend.entity.WorkEvent;
 import com.workpath.backend.interceptor.UserContext;
 import com.workpath.backend.mapper.TrackMapper;
 import com.workpath.backend.mapper.TrackPointMapper;
+import com.workpath.backend.mapper.WorkEventMapper;
 import com.workpath.backend.vo.TrackDetailVO;
+import com.workpath.backend.vo.TrackEventVO;
 import com.workpath.backend.vo.TrackListVO;
 import com.workpath.backend.vo.TrackPointVO;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +34,7 @@ public class TrackService {
 
     private final TrackMapper trackMapper;
     private final TrackPointMapper trackPointMapper;
+    private final WorkEventMapper workEventMapper;
 
     @Transactional
     public Long upload(TrackUploadDTO dto) {
@@ -82,6 +86,22 @@ public class TrackService {
         return toDetailVO(track);
     }
 
+    /**
+     * 某条轨迹的语义标注结果（员工侧，W9 移动端轨迹详情用）。
+     *
+     * <p>归属校验复用详情那一套：员工的 token 只能取到自己的轨迹，管理员不受限。
+     * 按开始时间升序，不分页——一条轨迹通常只产出 1-3 个停留事件。</p>
+     */
+    public List<TrackEventVO> listEvents(Long trackId) {
+        Track track = getTrackOrThrow(trackId);
+        checkPermission(track);
+
+        List<WorkEvent> events = workEventMapper.selectList(new LambdaQueryWrapper<WorkEvent>()
+                .eq(WorkEvent::getTrackId, trackId)
+                .orderByAsc(WorkEvent::getStartTime));
+        return events.stream().map(TrackService::toEventVO).collect(Collectors.toList());
+    }
+
     @Transactional
     public void delete(Long id) {
         Track track = getTrackOrThrow(id);
@@ -131,6 +151,24 @@ public class TrackService {
         vo.setLatitude(point.getLatitude());
         vo.setLongitude(point.getLongitude());
         vo.setRecordTime(point.getRecordTime());
+        return vo;
+    }
+
+    /** 实体 → 员工侧视图：复核人、判定过程原文这类管理端字段不外发 */
+    private static TrackEventVO toEventVO(WorkEvent event) {
+        TrackEventVO vo = new TrackEventVO();
+        vo.setEventId(event.getEventId());
+        vo.setEventType(event.getEventType());
+        vo.setStartTime(event.getStartTime());
+        vo.setEndTime(event.getEndTime());
+        vo.setCenterLat(event.getCenterLat());
+        vo.setCenterLng(event.getCenterLng());
+        vo.setDwellSeconds(event.getDwellSeconds());
+        vo.setPoiName(event.getPoiName());
+        vo.setSemanticLabel(event.getSemanticLabel());
+        vo.setConfidence(event.getConfidence());
+        vo.setAiReason(event.getAiReason());
+        vo.setConfirmStatus(event.getConfirmStatus());
         return vo;
     }
 
