@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 
 @Tag(name = "管理端", description = "用户管理、轨迹管理、数据统计（需 ADMIN 角色）")
@@ -81,8 +82,22 @@ public class AdminController {
             @RequestParam(defaultValue = "10") Integer pageSize,
             @RequestParam(required = false) Long userId,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
-            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
-        return Result.success(PageVO.of(adminService.trackList(page, pageSize, userId, startTime, endTime)));
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime,
+            @RequestParam(required = false) String analysisStatuses,
+            @RequestParam(required = false) String trackIds) {
+        return Result.success(PageVO.of(adminService.trackList(
+                page, pageSize, userId, startTime, endTime,
+                parseIntList(analysisStatuses), parseLongList(trackIds))));
+    }
+
+    private static List<Integer> parseIntList(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        return Arrays.stream(raw.split(",")).map(String::trim).map(Integer::valueOf).toList();
+    }
+
+    private static List<Long> parseLongList(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        return Arrays.stream(raw.split(",")).map(String::trim).map(Long::valueOf).toList();
     }
 
     @Operation(summary = "轨迹详情")

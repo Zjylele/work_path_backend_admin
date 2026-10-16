@@ -8,6 +8,7 @@ import com.workpath.backend.vo.AdminTrackVO;
 import com.workpath.backend.vo.TrackListVO;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -32,30 +33,31 @@ public interface TrackMapper extends BaseMapper<Track> {
                 <if test="userId != null">t.user_id = #{userId}</if>
                 <if test="startTime != null">AND t.start_time &gt;= #{startTime}</if>
                 <if test="endTime != null">AND t.start_time &lt;= #{endTime}</if>
+                <if test="analysisStatuses != null and !analysisStatuses.isEmpty()">
+                    AND t.analysis_status IN
+                    <foreach collection="analysisStatuses" item="status" open="(" separator="," close=")">
+                        #{status}
+                    </foreach>
+                </if>
+                <if test="trackIds != null and !trackIds.isEmpty()">
+                    AND t.id IN
+                    <foreach collection="trackIds" item="trackId" open="(" separator="," close=")">
+                        #{trackId}
+                    </foreach>
+                </if>
             </where>
-            ORDER BY t.start_time DESC
+            ORDER BY t.start_time DESC, t.id DESC
             </script>
             """)
     IPage<AdminTrackVO> selectAdminTracks(Page<AdminTrackVO> page,
                                           @Param("userId") Long userId,
                                           @Param("startTime") LocalDateTime startTime,
-                                          @Param("endTime") LocalDateTime endTime);
+                                          @Param("endTime") LocalDateTime endTime,
+                                          @Param("analysisStatuses") List<Integer> analysisStatuses,
+                                          @Param("trackIds") List<Long> trackIds);
 
-    /**
-     * 捞待分析的轨迹。定时任务用，只取未分析（analysis_status=0）的。
-     *
-     * <p>按 start_time 升序——先传的轨迹先分析，避免新上传的把老轨迹挤到后面
-     * 永远排不上（积压场景下这会让最早的几条数据长期不出结果）。
-     * ORDER BY start_time 而非 id，因为轨迹的 start_time 才对应真实的业务先后。</p>
-     *
-     * @param limit 单轮最多捞几条，防止一次捞太多把线程池占满
-     */
-    @Select("""
-            SELECT * FROM track
-            WHERE analysis_status = 0
-            ORDER BY start_time ASC, id ASC
-            LIMIT #{limit}
-            """)
-    List<Track> selectPendingAnalysis(@Param("limit") int limit);
+    /** 仅允许从待分析/失败切换到处理中，用数据库条件更新挡住重复提交。 */
+    @Update("UPDATE track SET analysis_status = 1 WHERE id = #{id} AND analysis_status IN (0, 3)")
+    int claimForManualAnalysis(@Param("id") Long id);
 
 }

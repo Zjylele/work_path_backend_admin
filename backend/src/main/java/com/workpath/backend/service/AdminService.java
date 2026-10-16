@@ -138,8 +138,10 @@ public class AdminService {
     }
 
     public IPage<AdminTrackVO> trackList(Integer page, Integer pageSize, Long userId,
-                                         LocalDateTime startTime, LocalDateTime endTime) {
-        return trackMapper.selectAdminTracks(new Page<>(page, pageSize), userId, startTime, endTime);
+                                         LocalDateTime startTime, LocalDateTime endTime,
+                                         List<Integer> analysisStatuses, List<Long> trackIds) {
+        return trackMapper.selectAdminTracks(new Page<>(page, pageSize), userId, startTime, endTime,
+                analysisStatuses, trackIds);
     }
 
     public AdminTrackDetailVO trackDetail(Long id) {

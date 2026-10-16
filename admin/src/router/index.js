@@ -39,6 +39,12 @@ const routes = [
         meta: { title: '轨迹详情', icon: 'MapLocation', activeMenu: '/tracks' }
       },
       {
+        path: 'ai-analysis',
+        name: 'AIAnalysis',
+        component: () => import('@/views/aiAnalysis/index.vue'),
+        meta: { title: 'AI轨迹分析', icon: 'Connection' }
+      },
+      {
         path: 'logs',
         name: 'LogList',
         component: () => import('@/views/log/index.vue'),

@@ -26,6 +26,10 @@
           <el-icon><MapLocation /></el-icon>
           <span>轨迹管理</span>
         </el-menu-item>
+        <el-menu-item index="/ai-analysis">
+          <el-icon><Connection /></el-icon>
+          <span>AI轨迹分析</span>
+        </el-menu-item>
         <el-menu-item index="/logs">
           <el-icon><Document /></el-icon>
           <span>操作日志</span>

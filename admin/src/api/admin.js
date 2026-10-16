@@ -37,6 +37,9 @@ export function getTrackDetail(id) {
 export function deleteTrack(id) {
   return request.delete(`/admin/tracks/${id}`)
 }
+export function startManualTrackAnalysis(trackIds) {
+  return request.post('/admin/ai-analysis/start', { trackIds })
+}
 
 // 操作日志
 export function getLogList(params) {
