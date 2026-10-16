@@ -1,5 +1,5 @@
 <template>
-  <el-container class="admin-layout">
+  <el-container class="admin-layout" :class="{ 'analysis-shell': route.name === 'AIAnalysis' }">
     <!-- 侧边栏 -->
     <el-aside width="210px" class="admin-aside">
       <div class="logo">
@@ -188,5 +188,25 @@ function handleCommand(command) {
 .admin-main {
   background-color: #f0f2f5;
   padding: 16px;
+}
+
+.analysis-shell > .el-container { min-width: 0; }
+
+@media (max-width: 650px) {
+  .analysis-shell .admin-aside { width: 56px !important; }
+  .analysis-shell .logo { gap: 0; }
+  .analysis-shell .logo span,
+  .analysis-shell .admin-menu .el-menu-item > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .analysis-shell .admin-menu .el-menu-item { padding: 0 !important; justify-content: center; }
+  .analysis-shell .admin-menu .el-menu-item :deep(.el-icon) { margin-right: 0; }
+  .analysis-shell .admin-header { padding: 0 12px; }
+  .analysis-shell .admin-main { padding: 8px; }
 }
 </style>
