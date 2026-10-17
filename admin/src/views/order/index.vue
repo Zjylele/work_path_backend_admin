@@ -14,6 +14,7 @@
         <el-tab-pane label="整改工单" name="orders">
           <div class="toolbar">
             <el-select v-model="orderStatus" placeholder="工单状态" clearable style="width: 150px" @change="loadOrders">
+              <el-option label="全部工单" value="all" />
               <el-option label="待处理" :value="0" />
               <el-option label="处理中" :value="1" />
               <el-option label="已闭环" :value="2" />
@@ -163,7 +164,7 @@ const tab = ref('orders')
 // ---- 工单 ----
 const ordersLoading = ref(false)
 const orders = ref([])
-const orderStatus = ref('')
+const orderStatus = ref('all')
 
 // ---- 核查结论 ----
 const checksLoading = ref(false)
@@ -178,7 +179,7 @@ const reviewForm = reactive({ orderId: null, accept: false, reviewNote: '' })
 async function loadOrders() {
   ordersLoading.value = true
   try {
-    const res = await getOrders(orderStatus.value === '' ? null : orderStatus.value)
+    const res = await getOrders(typeof orderStatus.value === 'number' ? orderStatus.value : null)
     orders.value = res.data || []
   } finally {
     ordersLoading.value = false

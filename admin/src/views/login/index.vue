@@ -110,11 +110,12 @@ async function handleLogin() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+  background: linear-gradient(135deg, #ffffff 0%, #f7f8fa 100%);
+  padding: 20px;
 }
 
 .login-card {
-  width: 380px;
+  width: min(100%, 400px);
   padding: 8px 8px 0;
 }
 
@@ -123,7 +124,7 @@ async function handleLogin() {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: #1890ff;
+  color: #4b5969;
 }
 
 .login-title h2 {

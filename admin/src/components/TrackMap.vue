@@ -1,5 +1,12 @@
 <template>
-  <div ref="mapContainer" class="track-map"></div>
+  <div class="track-map-shell" :aria-busy="mapLoading">
+    <div ref="mapContainer" class="track-map"></div>
+    <div v-if="mapError" class="map-notice" role="alert">
+      <span>{{ mapError }}</span>
+      <el-button size="small" type="primary" plain @click="retryMap">重新加载</el-button>
+    </div>
+    <div v-else-if="mapLoading" class="map-loading" role="status">正在加载地图底图…</div>
+  </div>
 </template>
 
 <script setup>
@@ -24,13 +31,19 @@ const props = defineProps({
 const emit = defineEmits(['overlay-click'])
 
 const mapContainer = ref(null)
+const mapLoading = ref(true)
+const mapError = ref('')
 let map = null
+let disposed = false
+let loadTimer = null
+let initializing = false
 let polyline = null
 let markers = []
 let overlayMarkers = []
 
 // 加载高德 JS API
 async function loadMap() {
+  if (!AMAP_KEY) throw new Error('MAP_KEY_MISSING')
   // 安全密钥必须在 load() 之前挂到 window._AMapSecurityConfig——jsapi-loader 1.0.x
   // 并不认识 loadOptions.securityJsCode，传了会被静默忽略；没有它 2.0 的服务鉴权
   // 全部失败，症状是矢量覆盖层正常、底图瓦片全灰（实测踩过）。
@@ -174,25 +187,78 @@ function drawOverlays() {
 }
 
 async function init() {
-  await loadMap()
-  map = new AMap.Map(mapContainer.value, {
-    zoom: 4,
-    center: [116.397428, 39.90923],
-    viewMode: '2D',
-    mapStyle: 'amap://styles/whitesmoke',
-    resizeEnable: true
-  })
-  map.addControl(
-    new AMap.Scale({
-      position: 'RB'
+  if (initializing || disposed) return
+  initializing = true
+  mapLoading.value = true
+  mapError.value = ''
+  clearTimeout(loadTimer)
+  loadTimer = setTimeout(() => {
+    if (disposed) return
+    mapLoading.value = false
+    mapError.value = '地图底图加载超时，请检查网络；若持续空白，请管理员核对地图服务的域名白名单与鉴权配置。'
+  }, 15000)
+  try {
+    await loadMap()
+    if (disposed || !mapContainer.value) return
+    map = new AMap.Map(mapContainer.value, {
+      zoom: 4,
+      center: [116.397428, 39.90923],
+      viewMode: '2D',
+      mapStyle: 'amap://styles/whitesmoke',
+      resizeEnable: true
     })
-  )
-  map.addControl(
-    new AMap.ToolBar({
-      position: 'RB'
+    map.on('complete', () => {
+      clearTimeout(loadTimer)
+      if (disposed) return
+      mapLoading.value = false
+      mapError.value = ''
     })
-  )
-  draw(props.points)
+    map.addControl(
+      new AMap.Scale({
+        position: 'RB'
+      })
+    )
+    map.addControl(
+      new AMap.ToolBar({
+        position: 'RB'
+      })
+    )
+    draw(props.points)
+  } catch (error) {
+    clearTimeout(loadTimer)
+    if (disposed) return
+    const message = String(error?.message || error || '')
+    mapLoading.value = false
+    if (message.includes('INVALID_USER_DOMAIN')) {
+      mapError.value = '地图域名校验失败，请管理员在高德控制台核对当前域名的白名单配置。'
+    } else if (message.includes('MAP_KEY_MISSING')) {
+      mapError.value = '地图服务未配置，请联系管理员完成配置。'
+    } else if (/INVALID_USER_KEY|INVALID_USER_SCODE|USERKEY_PLAT_NOMATCH/.test(message)) {
+      mapError.value = '地图服务鉴权失败，请管理员核对地图配置。'
+    } else {
+      mapError.value = '地图加载失败，请检查网络后重新加载。'
+    }
+  } finally {
+    initializing = false
+  }
+}
+
+function retryMap() {
+  if (initializing) {
+    // SDK 请求仍在等待时，通过重新加载页面重新发起请求。
+    window.location.reload()
+    return
+  }
+  clearTimeout(loadTimer)
+  if (map) {
+    clearOverlays()
+    map.destroy()
+    map = null
+  } else if (!window.AMap) {
+    // loader 会缓存 SDK 加载失败的状态，重试前需要清除该状态。
+    AMapLoader.reset()
+  }
+  init()
 }
 
 onMounted(init)
@@ -230,6 +296,8 @@ function focusOn(lat, lng) {
 defineExpose({ focusOn })
 
 onBeforeUnmount(() => {
+  disposed = true
+  clearTimeout(loadTimer)
   if (map) {
     map.destroy()
     map = null
@@ -238,6 +306,37 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.track-map-shell {
+  position: relative;
+}
+
+.map-notice,
+.map-loading {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 200;
+  padding: 10px 12px;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.map-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #a65b00;
+  background: #fffbe6;
+  border: 1px solid #ffe58f;
+}
+
+.map-notice span { flex: 1; }
+.map-loading { color: #606266; pointer-events: none; }
+
 .track-map {
   width: 100%;
   height: 420px;

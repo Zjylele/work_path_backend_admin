@@ -11,6 +11,7 @@
     <el-card shadow="never">
       <div class="toolbar">
         <el-select v-model="confirmStatus" placeholder="复核状态" clearable style="width: 160px" @change="handleFilterChange">
+          <el-option label="全部工作事件" value="all" />
           <el-option label="待确认" :value="0" />
           <el-option label="已确认" :value="1" />
           <el-option label="已驳回" :value="2" />
@@ -130,7 +131,7 @@ async function load() {
   loading.value = true
   try {
     const res = await getWorkEvents(
-      confirmStatus.value === '' ? null : confirmStatus.value,
+      typeof confirmStatus.value === 'number' ? confirmStatus.value : null,
       page.value,
       pageSize.value
     )

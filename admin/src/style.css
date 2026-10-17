@@ -15,7 +15,7 @@ body {
     'Microsoft YaHei', Arial, sans-serif;
   font-size: 14px;
   color: #303133;
-  background-color: #f0f2f5;
+  background-color: #f7f8fa;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -23,3 +23,11 @@ a {
   text-decoration: none;
   color: inherit;
 }
+
+:root {
+--el-color-primary:#4b5969; --el-color-primary-light-3:#818b96; --el-color-primary-light-5:#a5acb4; --el-color-primary-light-7:#c9cdd2; --el-color-primary-light-8:#dbdee1; --el-color-primary-light-9:#edf0f3; --el-color-primary-dark-2:#364452;
+--el-border-color:#e2e6ea; --el-border-color-light:#e8eaed; --el-border-color-lighter:#edf0f3; --el-bg-color-page:#f7f8fa; --el-text-color-primary:#24282d; --el-text-color-regular:#4b5969; --el-text-color-secondary:#717780; --el-border-radius-base:8px;
+}
+.el-card { --el-card-border-radius:14px; }
+.el-table { --el-table-header-bg-color:#f8f9fb; --el-table-row-hover-bg-color:#f7f8fa; }
+.el-button { font-weight:500; }
