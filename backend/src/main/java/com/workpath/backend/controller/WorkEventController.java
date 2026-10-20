@@ -73,7 +73,7 @@ public class WorkEventController {
         return Result.success();
     }
 
-    @Operation(summary = "触发轨迹重新分析（下一轮定时任务执行）")
+    @Operation(summary = "触发轨迹重新分析（提交后由手动分析批次执行）")
     @PostMapping("/tracks/{trackId}/reanalyze")
     public Result<Void> reanalyze(@PathVariable("trackId") Long trackId) {
         workEventService.reanalyze(trackId);

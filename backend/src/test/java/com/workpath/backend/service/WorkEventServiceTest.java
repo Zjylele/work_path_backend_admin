@@ -43,6 +43,7 @@ class WorkEventServiceTest {
     private TrackMapper trackMapper;
     private UserMapper userMapper;
     private ComplianceService complianceService;
+    private AnalysisTaskQueue analysisTaskQueue;
     private WorkEventService service;
 
     @BeforeEach
@@ -51,7 +52,9 @@ class WorkEventServiceTest {
         trackMapper = Mockito.mock(TrackMapper.class);
         userMapper = Mockito.mock(UserMapper.class);
         complianceService = Mockito.mock(ComplianceService.class);
-        service = new WorkEventService(workEventMapper, trackMapper, userMapper, complianceService);
+        analysisTaskQueue = Mockito.mock(AnalysisTaskQueue.class);
+        service = new WorkEventService(workEventMapper, trackMapper, userMapper,
+                complianceService, analysisTaskQueue);
         // patch 依赖 updateById 的返回行数；mock 默认 0 会被当成"事件已消失"
         when(workEventMapper.updateById(any(WorkEvent.class))).thenReturn(1);
         when(trackMapper.updateById(any(Track.class))).thenReturn(1);
@@ -243,16 +246,18 @@ class WorkEventServiceTest {
     }
 
     @Test
-    @DisplayName("重新分析：无已确认事件时置回未分析，等定时任务捞起")
-    void reanalyzeResetsStatusWhenNothingConfirmed() {
+    @DisplayName("重新分析：立即投递到分析队列，而不是置回 0 等定时任务")
+    void reanalyzeDispatchesToQueueInsteadOfWaitingForScheduler() {
+        // 定时任务入口已移除，置回 0 等于石沉大海——没有任何代码会查状态 0 的轨迹。
+        // 重新分析必须直接把这条轨迹送进手动批次，让它真的被分析。
         when(trackMapper.selectById(7L)).thenReturn(track());
         when(workEventMapper.selectCount(any())).thenReturn(0L);
 
         service.reanalyze(7L);
 
-        ArgumentCaptor<Track> cap = ArgumentCaptor.forClass(Track.class);
-        verify(trackMapper).updateById(cap.capture());
-        assertThat(cap.getValue().getAnalysisStatus()).isZero();
+        verify(analysisTaskQueue).startManualBatch(List.of(7L));
+        // 不再走 updateById 置 0：状态由批次自己按 0/3 -> 1 -> 2/3 推进
+        verify(trackMapper, never()).updateById(any(Track.class));
     }
 
     @Test

@@ -1,52 +1,55 @@
 package com.workpath.backend.service;
 
+import com.workpath.backend.common.BusinessException;
 import com.workpath.backend.entity.Track;
-import com.workpath.backend.entity.TrackPoint;
-import com.workpath.backend.entity.WorkEvent;
-import com.workpath.backend.interceptor.UserContext;
-import com.workpath.backend.entity.User;
 import com.workpath.backend.mapper.TrackMapper;
-import com.workpath.backend.mapper.TrackPointMapper;
-import com.workpath.backend.mapper.WorkEventMapper;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.springframework.core.task.TaskExecutor;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
+import java.util.stream.LongStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * 轨迹分析任务队列单元测试。
+ * 手动轨迹分析批次单元测试。
  *
- * <p>钉住 M4 的状态机骨架：</p>
+ * <p>钉住管理员手动发起的这条入口：</p>
  * <ul>
- *   <li><b>0 → 1 → 2 的流转</b>（第2章 2.3.4 明确要求）。关键点是「进入分析前
- *       先置 1」——如果先分析再置状态，同一个轨迹会被下一轮定时任务重复捞起，
- *       并发跑两次分析；</li>
- *   <li><b>失败不卡死队列</b>。单条轨迹分析失败置 2（带失败标记）或保持 0 重试，
- *       但不能让它永远停在 1，否则后续定时任务再也不捞它，该轨迹彻底失联；</li>
- *   <li><b>上传接口不被分析拖慢</b>。分析只在定时任务里跑，upload 路径不触发。</li>
+ *   <li><b>先占用再执行</b>。占用是带数据库条件的更新
+ *       （{@code analysis_status IN (0,3)}），影响行数不是 1 就说明被别的操作
+ *       抢先，必须拒绝而不是继续分析；</li>
+ *   <li><b>事务提交后才启动批次</b>。占用和启动之间隔着提交，若事务回滚，
+ *       批次不该跑起来对一条"其实没占用成功"的轨迹做分析；</li>
+ *   <li><b>单条失败不拖垮其余</b>。失败置 3 而不是停在 1——停在 1 的轨迹
+ *       再也进不了待处理列表，等于失联；置 3 至少还能被重新发起。</li>
  * </ul>
  *
- * <p>这里用 mock 的 Mapper 与 AnalysisService，被测对象只是编排本身——
- * DBSCAN 与 POI 的正确性由 AnalysisServiceTest（W4）覆盖。</p>
+ * <p>这里 mock Mapper 与分析服务，被测对象只是编排本身；停留点识别与
+ * 语义标注的正确性由 StayPointDetectorTest / TrackAnalysisServiceTest 覆盖。</p>
+ *
+ * <p><b>关于历史</b>：本类早期测的是定时任务版本的 {@code dispatch()}，
+ * 那个入口在手动分析工作流上线时被移除，测试没跟着改，于是编译就过不去、
+ * 挡住了全量 {@code mvn test}。本次按 {@code startManualBatch} 重写，
+ * 保留了原来"0→1→2 流转""失败置 3 可重试"两条断言的精神。</p>
  */
 class AnalysisTaskQueueTest {
 
     private TrackMapper trackMapper;
-    private TrackPointMapper trackPointMapper;
-    private WorkEventMapper workEventMapper;
     private TrackAnalysisService analysisService;
     private AnalysisTaskQueue queue;
+
+    /** 捕获真正投递到线程池的任务，测试里手动执行它 */
+    private final List<Runnable> submitted = new ArrayList<>();
 
     /** 模拟库中的轨迹 */
     private final List<Track> storedTracks = new ArrayList<>();
@@ -54,50 +57,74 @@ class AnalysisTaskQueueTest {
     @BeforeEach
     void setUp() {
         trackMapper = Mockito.mock(TrackMapper.class);
-        trackPointMapper = Mockito.mock(TrackPointMapper.class);
-        workEventMapper = Mockito.mock(WorkEventMapper.class);
         analysisService = Mockito.mock(TrackAnalysisService.class);
+        // 不直接跑，只收下任务——批次何时执行由测试控制
+        TaskExecutor executor = submitted::add;
 
-        // 捞未分析轨迹：按入库顺序返回，与分析执行顺序无关
-        Mockito.lenient().when(trackMapper.selectPendingAnalysis(Mockito.anyInt()))
-                .thenAnswer(inv -> storedTracks.stream()
-                        .filter(t -> t.getAnalysisStatus() != null && t.getAnalysisStatus() == 0)
-                        .limit(inv.<Integer>getArgument(0))
-                        .toList());
+        // 占用：按数据库条件更新的语义，只有 0/3 能成功
+        Mockito.lenient().when(trackMapper.claimForManualAnalysis(Mockito.anyLong()))
+                .thenAnswer(inv -> {
+                    Track t = find(inv.getArgument(0));
+                    if (t == null || t.getAnalysisStatus() == null
+                            || (t.getAnalysisStatus() != 0 && t.getAnalysisStatus() != 3)) {
+                        return 0;
+                    }
+                    t.setAnalysisStatus(1);
+                    return 1;
+                });
         Mockito.lenient().when(trackMapper.selectById(Mockito.any(Long.class)))
-                .thenAnswer(inv -> storedTracks.stream()
-                        .filter(t -> t.getId().equals(inv.<Long>getArgument(0)))
-                        .findFirst().orElse(null));
+                .thenAnswer(inv -> find(inv.getArgument(0)));
         // updateById 按主键更新非空字段，与真实 MyBatis-Plus 行为一致
         Mockito.lenient().when(trackMapper.updateById(Mockito.any(Track.class)))
                 .thenAnswer(inv -> {
                     Track patch = inv.getArgument(0);
-                    Track target = storedTracks.stream()
-                            .filter(t -> t.getId().equals(patch.getId())).findFirst().orElse(null);
+                    Track target = find(patch.getId());
                     if (target == null) {
                         return 0;
                     }
                     if (patch.getAnalysisStatus() != null) {
                         target.setAnalysisStatus(patch.getAnalysisStatus());
                     }
-                    if (patch.getStatus() != null) {
-                        target.setStatus(patch.getStatus());
-                    }
                     return 1;
                 });
 
-        queue = new AnalysisTaskQueue(trackMapper, analysisService);
+        queue = new AnalysisTaskQueue(trackMapper, analysisService, executor);
+
+        // 僵死复位：按 SQL 语义只改 analysis_status=1 且早于阈值的行
+        Mockito.lenient().when(trackMapper.resetStaleRunningTracks(Mockito.anyInt(), Mockito.anyInt()))
+                .thenAnswer(inv -> {
+                    int target = inv.getArgument(0);
+                    int minutes = inv.getArgument(1);
+                    LocalDateTime cutoff = LocalDateTime.now().minusMinutes(minutes);
+                    int[] n = {0};
+                    storedTracks.stream()
+                            .filter(t -> t.getAnalysisStatus() != null && t.getAnalysisStatus() == 1)
+                            .filter(t -> t.getStartTime() != null && t.getStartTime().isBefore(cutoff))
+                            .forEach(t -> {
+                                t.setAnalysisStatus(target);
+                                n[0]++;
+                            });
+                    return n[0];
+                });
+
+        // 每个用例一份干净状态。JUnit 5 的 @Nested 会复用外层测试实例，
+        // storedTracks 若不在 beforeEach 清空，前一个用例改过的状态会被
+        // findFirst() 捞到，表现为"莫名其妙的状态不可发起"。
+        storedTracks.clear();
+        submitted.clear();
     }
 
-    @AfterEach
-    void tearDown() {
-        UserContext.clear();
+    private Track find(Long id) {
+        return storedTracks.stream()
+                .filter(t -> t.getId().equals(id))
+                .findFirst().orElse(null);
     }
 
     private Track track(long id, int analysisStatus) {
         Track t = new Track();
         t.setId(id);
         t.setUserId(1L);
+        t.setName("轨迹 " + id);
         t.setStartTime(LocalDateTime.of(2026, 9, 1, 9, 0));
         t.setEndTime(LocalDateTime.of(2026, 9, 1, 18, 0));
         t.setStatus(1);
@@ -106,99 +133,248 @@ class AnalysisTaskQueueTest {
         return t;
     }
 
+    /** 跑完提交后注册的收尾动作，模拟事务真正提交。 */
+    private void commitPending() {
+        List<Runnable> snapshot = List.copyOf(submitted);
+        submitted.clear();
+        snapshot.forEach(Runnable::run);
+    }
+
     @Nested
-    @DisplayName("状态机流转 0 → 1 → 2")
-    class StateMachine {
+    @DisplayName("提交前的占用与校验")
+    class Claiming {
 
         @Test
-        @DisplayName("捞起后先置分析中(1)，再执行分析，最后置完成(2)")
+        @DisplayName("待分析与失败的轨迹都能发起；发起后即被占用为分析中(1)")
+        void claimsPendingAndFailed() {
+            track(1L, 0);
+            track(2L, 3);
+
+            queue.startManualBatch(List.of(1L, 2L));
+
+            // 占用发生在方法返回前：不依赖事务提交就能看到状态已置 1
+            assertThat(find(1L).getAnalysisStatus()).isEqualTo(1);
+            assertThat(find(2L).getAnalysisStatus()).isEqualTo(1);
+            // 且确实用了带条件的占用更新，而不是无条件置 1
+            Mockito.verify(trackMapper).claimForManualAnalysis(1L);
+            Mockito.verify(trackMapper).claimForManualAnalysis(2L);
+        }
+
+        @Test
+        @DisplayName("空列表、超上限、重复 ID、空 ID 一律拒绝")
+        void rejectsInvalidBatches() {
+            assertThatThrownBy(() -> queue.startManualBatch(List.of()))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("1 到 10 条");
+            assertThatThrownBy(() -> queue.startManualBatch(
+                            LongStream.rangeClosed(1, 11).boxed().toList()))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("1 到 10 条");
+            assertThatThrownBy(() -> queue.startManualBatch(List.of(1L, 1L)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("重复");
+            // List.of 不接受 null，用 ArrayList 构造含空 ID 的入参
+            List<Long> withNull = new ArrayList<>(List.of(1L));
+            withNull.add(null);
+            assertThatThrownBy(() -> queue.startManualBatch(withNull))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("为空");
+
+            // 一条都不该被占用
+            Mockito.verify(trackMapper, Mockito.never()).claimForManualAnalysis(Mockito.anyLong());
+        }
+
+        @Test
+        @DisplayName("轨迹不存在：拒绝并说明是哪一个")
+        void rejectsUnknownTrack() {
+            assertThatThrownBy(() -> queue.startManualBatch(List.of(1L)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("轨迹不存在：1");
+        }
+
+        @Test
+        @DisplayName("已分析或分析中的轨迹不可发起——状态不在 (0,3) 内")
+        void rejectsNonRestartableStatus() {
+            track(1L, 2);
+            track(2L, 1);
+
+            assertThatThrownBy(() -> queue.startManualBatch(List.of(1L)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("不可发起分析");
+            assertThatThrownBy(() -> queue.startManualBatch(List.of(2L)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("不可发起分析");
+        }
+
+        @Test
+        @DisplayName("占用被抢占（条件更新影响 0 行）：拒绝，不进入分析")
+        void rejectsWhenClaimLoses() {
+            // 校验读的是占用前的状态，占用才是真正写库那一下。
+            // 这条用例验的是第二道防线失守：状态看着合法，但条件更新影响 0 行
+            // （并发场景下另一个操作刚好把它改走了）。
+            //
+            // 用 doReturn 而不是 when(...).thenReturn(...)：后者会先真调一次 mock，
+            // 命中 setUp 里的默认 stub，而那个 stub 带"把状态改成 1"的副作用——
+            // 于是还没进 startManualBatch，状态就已经不是 0，校验先抛"不可发起"，
+            // 根本走不到占用那一步。这是 Mockito 的经典陷阱，值得留注释。
+            track(1L, 0);
+            Mockito.doReturn(0).when(trackMapper).claimForManualAnalysis(1L);
+
+            assertThatThrownBy(() -> queue.startManualBatch(List.of(1L)))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("已被其他操作启动");
+
+            // 状态没被占用更新改写，仍停在 0
+            assertThat(find(1L).getAnalysisStatus()).isZero();
+            Mockito.verify(analysisService, Mockito.never()).analyze(Mockito.any());
+            assertThat(submitted).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("批次执行")
+    class Processing {
+
+        @Test
+        @DisplayName("事务提交后才启动批次；提交前不执行分析")
+        void startsOnlyAfterCommit() {
+            track(1L, 0);
+
+            // 光 initSynchronization 不够：没有实际事务时 registerSynchronization 不会生效，
+            // 所以这里手动绑定一个事务持有者，模拟 @Transactional 的真实环境。
+            TransactionSynchronizationManager.initSynchronization();
+            TransactionSynchronizationManager.setActualTransactionActive(true);
+            try {
+                queue.startManualBatch(List.of(1L));
+                // 占用已完成，但批次还没跑——它在等 afterCommit
+                assertThat(submitted).isEmpty();
+                Mockito.verify(analysisService, Mockito.never()).analyze(Mockito.any());
+
+                // 提交：触发 afterCommit 回调
+                TransactionSynchronizationManager.getSynchronizations()
+                        .forEach(s -> s.afterCommit());
+                assertThat(submitted).hasSize(1);
+
+                submitted.get(0).run();
+            } finally {
+                TransactionSynchronizationManager.clearSynchronization();
+            }
+
+            Mockito.verify(analysisService).analyze(Mockito.any(Track.class));
+            assertThat(find(1L).getAnalysisStatus()).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("无事务上下文时立即启动（不依赖同步注册）")
+        void startsImmediatelyWithoutTransaction() {
+            track(1L, 0);
+
+            queue.startManualBatch(List.of(1L));
+
+            assertThat(submitted).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("0 → 1 → 2：占用先于分析，完成后置已分析")
         void flowsZeroOneTwo() {
             track(1L, 0);
 
-            queue.dispatch();
+            queue.startManualBatch(List.of(1L));
+            commitPending();
 
             ArgumentCaptor<Track> cap = ArgumentCaptor.forClass(Track.class);
             Mockito.verify(trackMapper, Mockito.atLeastOnce()).updateById(cap.capture());
             List<Integer> statuses = cap.getAllValues().stream()
                     .map(Track::getAnalysisStatus).filter(java.util.Objects::nonNull).toList();
 
-            // 先看到 1（进入分析），最后看到 2（完成）
-            assertThat(statuses.get(0)).isEqualTo(1);
             assertThat(statuses.get(statuses.size() - 1)).isEqualTo(2);
-            assertThat(storedTracks.get(0).getAnalysisStatus()).isEqualTo(2);
+            assertThat(find(1L).getAnalysisStatus()).isEqualTo(2);
         }
 
         @Test
-        @DisplayName("进入分析前就置 1，防止下一轮定时任务重复捞同一轨迹")
-        void marksBeforeAnalysis() {
-            track(1L, 0);
-            // 分析执行时把状态改回 0 —— 若实现是「先分析后置1」，这里会看到 0
-            Mockito.doAnswer(inv -> {
-                storedTracks.get(0).setAnalysisStatus(0);
-                return null;
-            }).when(analysisService).analyze(Mockito.any(Track.class));
-
-            queue.dispatch();
-
-            // 结束时必须是 2：置 1 发生在 analyze 之前，analyze 内部的改动不会回写
-            assertThat(storedTracks.get(0).getAnalysisStatus()).isEqualTo(2);
-        }
-
-        @Test
-        @DisplayName("没有未分析轨迹时一次数据库都不写")
-        void noopWhenNothingPending() {
-            track(1L, 2);
-
-            queue.dispatch();
-
-            // 指明参数类型：BaseMapper 有 updateById(T) 与 updateById(Collection) 两个重载
-            Mockito.verify(trackMapper, Mockito.never()).updateById(Mockito.any(Track.class));
-            Mockito.verify(analysisService, Mockito.never()).analyze(Mockito.any());
-        }
-
-        @Test
-        @DisplayName("已在分析中(1)的轨迹不被捞起——上一轮遗留的由超时机制兜")
-        void skipsInFlight() {
-            track(1L, 1);
-
-            queue.dispatch();
-
-            Mockito.verify(analysisService, Mockito.never()).analyze(Mockito.any());
-        }
-    }
-
-    @Nested
-    @DisplayName("单条失败不拖垮队列")
-    class Isolation {
-
-        @Test
-        @DisplayName("某条分析抛异常：该条置失败态(3)，其余继续完成")
+        @DisplayName("某条分析抛异常：该条置失败态(3)，同批其余继续完成")
         void failureIsolated() {
             Track ok = track(1L, 0);
             Track bad = track(2L, 0);
 
-            Mockito.doThrow(new RuntimeException("DBSCAN 输入点数不足"))
+            Mockito.doThrow(new RuntimeException("停留识别输入点数不足"))
                     .when(analysisService).analyze(Mockito.argThat(t -> t.getId().equals(2L)));
 
-            queue.dispatch();
+            queue.startManualBatch(List.of(1L, 2L));
+            commitPending();
 
-            // 失败的那条不留在 1（否则后续再也不捞），置 3 带标记
+            // 失败的那条不留在 1，置 3 才能被再次发起
             assertThat(bad.getAnalysisStatus()).isEqualTo(3);
-            // 正常的那条照常完成
             assertThat(ok.getAnalysisStatus()).isEqualTo(2);
         }
 
         @Test
-        @DisplayName("失败后重试：同一轨迹能被再次捞起分析")
+        @DisplayName("失败后仍可重新发起——3 是允许重新分析的状态")
         void failureAllowsRetry() {
-            Track t = track(1L, 0);
-            Mockito.doThrow(new RuntimeException("网络超时"))
+            track(1L, 0);
+            Mockito.doThrow(new RuntimeException("模型调用超时"))
                     .when(analysisService).analyze(Mockito.any(Track.class));
 
-            queue.dispatch();
+            queue.startManualBatch(List.of(1L));
+            commitPending();
 
-            // 置 3 而不是停在 1：否则定时任务的 WHERE analysis_status=0 再也捞不到它
-            assertThat(t.getAnalysisStatus()).isEqualTo(3);
+            assertThat(find(1L).getAnalysisStatus()).isEqualTo(3);
+
+            // 同样的轨迹再来一次：占用条件 (0,3) 成立，这次分析不再抛异常
+            Mockito.doNothing().when(analysisService).analyze(Mockito.any(Track.class));
+            queue.startManualBatch(List.of(1L));
+            commitPending();
+
+            assertThat(find(1L).getAnalysisStatus()).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("批次执行中轨迹被删：跳过该条，其余继续完成")
+        void skipsDeletedTrack() {
+            Track ok = track(1L, 0);
+            track(2L, 0);
+            // selectById 对 2L 返回 null，模拟批次执行期间该轨迹已被删除。
+            // 注意 stub 要写在 startManualBatch 之后——占用阶段也走 selectById，
+            // 提前 stub 会让它连占用都过不去。
+            queue.startManualBatch(List.of(1L, 2L));
+            Mockito.when(trackMapper.selectById(2L)).thenReturn(null);
+            commitPending();
+
+            // 被删的那条不置任何终态（占用时的 1 保持原样由人工发现），其余照常完成
+            assertThat(ok.getAnalysisStatus()).isEqualTo(2);
+            Mockito.verify(analysisService).analyze(Mockito.argThat(t -> t.getId().equals(1L)));
+            Mockito.verify(analysisService, Mockito.never())
+                    .analyze(Mockito.argThat(t -> t.getId().equals(2L)));
+        }
+    }
+
+    @Nested
+    @DisplayName("僵死的分析中(1)要能自救")
+    class StaleRecovery {
+
+        @Test
+        @DisplayName("启动时把早于阈值的分析中(1)复位为失败(3)，让管理员能重试")
+        void resetsStaleRunningTracks() {
+            Track stale = track(1L, 1);
+            stale.setStartTime(LocalDateTime.now().minusHours(2));
+            Track fresh = track(2L, 1);
+            fresh.setStartTime(LocalDateTime.now().minusMinutes(1));
+
+            int reset = queue.recoverStaleRunningTracks();
+
+            assertThat(reset).isEqualTo(1);
+            assertThat(stale.getAnalysisStatus()).isEqualTo(3);
+            // 刚提交的批次还在跑，不能动
+            assertThat(fresh.getAnalysisStatus()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("没有僵死轨迹时一次数据库都不写")
+        void noopWhenNothingStale() {
+            track(1L, 0);
+            track(2L, 2);
+
+            assertThat(queue.recoverStaleRunningTracks()).isZero();
         }
     }
 

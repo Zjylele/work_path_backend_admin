@@ -60,4 +60,16 @@ public interface TrackMapper extends BaseMapper<Track> {
     @Update("UPDATE track SET analysis_status = 1 WHERE id = #{id} AND analysis_status IN (0, 3)")
     int claimForManualAnalysis(@Param("id") Long id);
 
+    /**
+     * 僵死的「分析中(1)」复位：只改超过阈值分钟仍未完成的，
+     * 并且以 start_time 作时间基准——它是轨迹自身的采集时间，不受本服务重启影响。
+     *
+     * <p>带上 {@code analysis_status = 1} 条件：这条语句随时可能被重复执行
+     * （每次启动都跑），少了这个条件会把已经跑完的轨迹反复改回失败态。</p>
+     */
+    @Update("UPDATE track SET analysis_status = #{targetStatus} " +
+            "WHERE analysis_status = 1 AND start_time < DATE_SUB(NOW(), INTERVAL #{minutes} MINUTE)")
+    int resetStaleRunningTracks(@Param("targetStatus") int targetStatus,
+                                @Param("minutes") int minutes);
+
 }
