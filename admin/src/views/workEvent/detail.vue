@@ -411,6 +411,7 @@ onMounted(load)
 .events-card :deep(.el-card__body) { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 20px 16px; }
 .event-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: 16px 4px 0 0; scrollbar-gutter: stable; }
 .event-pagination { flex-shrink: 0; }
+.event-pagination :deep(.el-pager li.is-active) { font-size: 18px; font-weight: 700; }
 @media (max-width: 768px) {
   .analysis-detail { --map-panel-height: clamp(190px, 32dvh, 300px); }
   .map-card :deep(.el-card__header), .events-card :deep(.el-card__header) { padding: 12px; }
