@@ -209,7 +209,7 @@ function handleCommand(command) {
 
 .admin-menu :deep(.el-sub-menu__title) {
   height: 48px;
-  color: #717780;
+  color: #596579;
   background-color: #ffffff;
   font-size: 15px;
   font-weight: 600;
@@ -231,7 +231,7 @@ function handleCommand(command) {
 }
 
 .admin-menu :deep(.el-sub-menu__icon-arrow) {
-  color: #929ba4;
+  color: #596579;
 }
 
 .admin-menu .el-menu-item {

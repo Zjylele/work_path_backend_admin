@@ -105,9 +105,12 @@ public class StayPointDetector {
             if (grouped[seed]) {
                 continue;
             }
-            // 收种子 eps 邻域内的全部点（含种子自身）。不传递扩展。
+            // 只收时间上连续的邻域点；离开后再次经过属于另一次活动。
             List<TrackPoint> group = new ArrayList<>();
             for (int j = seed; j < cleaned.size(); j++) {
+                if (distanceMeters(cleaned.get(seed), cleaned.get(j)) > epsMeters) {
+                    break;
+                }
                 if (!grouped[j] && distanceMeters(cleaned.get(seed), cleaned.get(j)) <= epsMeters) {
                     group.add(cleaned.get(j));
                     grouped[j] = true;

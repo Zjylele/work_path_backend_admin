@@ -47,7 +47,12 @@
               <div v-else-if="item.resultError" class="result-error" role="alert"><el-icon><Warning /></el-icon><div><p>{{ item.resultError }}</p><el-button text type="primary" size="small" @click="$emit('retry', item)">重新加载结果</el-button></div></div>
               <div v-else-if="item.eventsLoaded && !item.events.length" class="no-events"><el-icon><CircleCheck /></el-icon><span>分析已完成，未识别到可复核的停留事件。</span></div>
               <div v-else-if="!item.eventsLoaded" class="processing"><span>结果尚未读取。</span><el-button text type="primary" size="small" @click="$emit('retry', item)">加载结果</el-button></div>
-              <div v-else class="event-list">
+              <template v-else>
+              <el-button class="result-toggle" text type="primary" :aria-expanded="!!expandedResults[`${batch.id}:${item.id}`]" @click="expandedResults[`${batch.id}:${item.id}`] = !expandedResults[`${batch.id}:${item.id}`]">
+                {{ expandedResults[`${batch.id}:${item.id}`] ? '收起结果' : '展开结果' }}（共 {{ item.events.length }} 条）
+                <el-icon><ArrowDown :style="{ transform: expandedResults[`${batch.id}:${item.id}`] ? 'rotate(180deg)' : undefined }" /></el-icon>
+              </el-button>
+              <div v-if="expandedResults[`${batch.id}:${item.id}`]" class="event-list">
                 <section v-for="event in item.events" :key="event.eventId" class="event-result">
                   <div class="event-time">{{ formatTime(event.startTime) }} 至 {{ formatTime(event.endTime) }}<span>停留 {{ formatDuration(event.dwellSeconds) }}</span></div>
                   <div class="event-label"><strong>{{ event.poiName || '地点未识别' }}</strong><el-tag size="small" :type="event.semanticLabel ? 'primary' : 'info'">{{ event.semanticLabel || '未标注' }}</el-tag><span v-if="confidenceText(event.confidence)" class="confidence">置信度 {{ confidenceText(event.confidence) }}</span></div>
@@ -56,6 +61,7 @@
                   <div class="event-review-state"><span :class="{ pending: event.confirmStatus === 0 }">{{ reviewText(event.confirmStatus) }}</span><small>事件 #{{ event.eventId }}</small></div>
                 </section>
               </div>
+              </template>
               <div v-if="item.eventsLoaded && item.events.length" class="review-action"><span>结果已保存，可查看与处理复核状态</span><el-button size="small" type="primary" plain @click="$emit('review', item.id)">进入事件复核 <el-icon><TopRight /></el-icon></el-button></div>
             </template>
           </article>
@@ -79,6 +85,7 @@ defineEmits(['refresh', 'retry', 'review', 'show-failed'])
 const scrollArea = ref(null)
 const followsBottom = ref(true)
 const unreadUpdates = ref(false)
+const expandedResults = ref({})
 
 function onScroll() {
   const area = scrollArea.value
@@ -134,47 +141,47 @@ defineExpose({ focusTrack })
 .ai-mark, .assistant-avatar, .welcome-icon { display: grid; place-items: center; color: #4974ce; background: #eff4ff; border: 1px solid #e4ebfb; }
 .ai-mark { width: 36px; height: 36px; border-radius: 10px; font-size: 20px; flex-shrink: 0; }
 .output-title h1 { margin: 0 0 6px; font-weight: 600; font-size: 16px; color: #30435d; }
-.output-title p { font-size: 11px; color: #94a1b3; line-height: 1.5; }
-.refresh-button { color: #7c8da5; border-color: #e3e8f0; border-radius: 6px; font-size: 12px; }
+.output-title p { font-size: 11px; color: #596579; line-height: 1.5; }
+.refresh-button { color: #596579; border-color: #e3e8f0; border-radius: 6px; font-size: 12px; }
 .message-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 24px clamp(20px, 4%, 60px); background: linear-gradient(#fafcff 0, #fff 220px); overscroll-behavior: contain; }
 .welcome { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; height: 100%; min-height: 350px; }
 .welcome-icon { width: 64px; height: 64px; border-radius: 19px; font-size: 32px; margin-bottom: 23px; }
 .welcome h2 { font-size: 21px; font-weight: 600; margin-bottom: 14px; color: #344962; }
-.welcome p { font-size: 12px; line-height: 2; color: #8f9db1; }
-.welcome-steps { display: flex; align-items: center; gap: 15px; margin-top: 30px; color: #a0aec0; font-size: 11px; }
+.welcome p { font-size: 12px; line-height: 2; color: #596579; }
+.welcome-steps { display: flex; align-items: center; gap: 15px; margin-top: 30px; color: #596579; font-size: 11px; }
 .welcome-steps span { white-space: nowrap; }
 .welcome-steps b { display: inline-grid; place-items: center; width: 19px; height: 19px; border-radius: 50%; background: #f1f5fc; font-size: 10px; font-weight: 500; margin-right: 5px; color: #7392bb; }
 .analysis-batch { max-width: 900px; margin: 0 auto 38px; }
-.batch-divider { display: flex; justify-content: center; margin: 0 0 23px; font-size: 10px; color: #a4afbe; }
+.batch-divider { display: flex; justify-content: center; margin: 0 0 23px; font-size: 10px; color: #596579; }
 .submission { max-width: 600px; width: fit-content; margin-left: auto; background: #edf4ff; border: 1px solid #e0e9f9; border-radius: 12px 12px 3px 12px; padding: 14px 17px; color: #4d6587; font-size: 12px; }
 .submission strong { font-weight: 500; line-height: 1.8; }
 .submission-tracks { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid #dce7f6; margin-top: 9px; padding-top: 10px; font-size: 11px; }
 .submission-tracks > span { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; overflow-wrap: anywhere; }
-.submission-tracks small { color: #92a3bb; font-size: 10px; }
-.submission-caption { text-align: right; color: #a0acbc; font-size: 10px; margin: 8px 0 27px; }
+.submission-tracks small { color: #596579; font-size: 10px; }
+.submission-caption { text-align: right; color: #596579; font-size: 10px; margin: 8px 0 27px; }
 .assistant-message { display: flex; gap: 12px; }
 .assistant-avatar { width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0; font-size: 17px; }
 .assistant-content { flex: 1; min-width: 0; }
 .assistant-name { font-size: 11px; font-weight: 600; color: #657b9b; margin: 7px 0 17px; }
-.assistant-name span { color: #9ba9bb; font-weight: 400; margin-left: 6px; }
+.assistant-name span { color: #596579; font-weight: 400; margin-left: 6px; }
 .assistant-content h2 { font-size: 16px; font-weight: 600; color: #354963; margin: 0 0 10px; }
-.assistant-intro { font-size: 12px; line-height: 1.9; color: #8593a8; margin-bottom: 16px; }
+.assistant-intro { font-size: 12px; line-height: 1.9; color: #596579; margin-bottom: 16px; }
 .batch-stats { display: flex; flex-wrap: wrap; gap: 15px 0; background: #f8fafd; border: 1px solid #e9eef5; border-radius: 8px; padding: 14px 0; margin-bottom: 20px; }
 .batch-stats > div { padding: 0 18px; border-right: 1px solid #e4eaf3; }
 .batch-stats > div:last-child { border-right: 0; }
 .batch-stats b { display: block; color: #405773; font-size: 21px; line-height: 1.3; font-weight: 600; margin-bottom: 5px; }
-.batch-stats b small { font-size: 10px; color: #9ba9bb; font-weight: 400; }
-.batch-stats span { font-size: 10px; color: #94a2b6; }
+.batch-stats b small { font-size: 10px; color: #596579; font-weight: 400; }
+.batch-stats span { font-size: 10px; color: #596579; }
 .batch-stats b.failed-number { color: #b86e70; }
 .result-card { border: 1px solid #e4eaf2; border-radius: 9px; margin-bottom: 16px; overflow: hidden; scroll-margin-top: 16px; }
 .result-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; background: #fbfcfe; padding: 13px 15px 8px; }
 .result-heading > div { display: flex; gap: 7px; align-items: baseline; flex-wrap: wrap; min-width: 0; }
-.result-heading .el-icon { color: #8c9fb7; align-self: center; }
+.result-heading .el-icon { color: #596579; align-self: center; }
 .result-heading strong { font-size: 12px; color: #415672; font-weight: 600; overflow-wrap: anywhere; }
-.result-heading div > span { color: #a3afbf; font-size: 10px; }
+.result-heading div > span { color: #596579; font-size: 10px; }
 .result-heading :deep(.el-tag) { flex-shrink: 0; font-size: 10px; }
-.track-summary { background: #fbfcfe; color: #98a6b9; font-size: 10px; padding: 0 15px 12px; line-height: 1.8; border-bottom: 1px solid #edf0f5; }
-.processing, .no-events, .result-error { padding: 21px 16px; display: flex; align-items: flex-start; gap: 9px; color: #8194ae; font-size: 12px; line-height: 1.8; }
+.track-summary { background: #fbfcfe; color: #596579; font-size: 10px; padding: 0 15px 12px; line-height: 1.8; border-bottom: 1px solid #edf0f5; }
+.processing, .no-events, .result-error { padding: 21px 16px; display: flex; align-items: flex-start; gap: 9px; color: #596579; font-size: 12px; line-height: 1.8; }
 .processing > .el-icon, .result-error > .el-icon, .no-events > .el-icon { flex-shrink: 0; margin-top: 4px; }
 .processing { align-items: center; }
 .processing > .el-icon { margin-top: 0; }
@@ -183,32 +190,32 @@ defineExpose({ focusTrack })
 .result-error :deep(.el-button) { padding-left: 0; margin-top: 4px; }
 .event-result { padding: 15px; border-bottom: 1px solid #edf0f5; }
 .event-result:last-child { border-bottom: 0; }
-.event-time { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 10px; line-height: 1.8; color: #95a5b9; margin-bottom: 10px; }
+.event-time { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 10px; line-height: 1.8; color: #596579; margin-bottom: 10px; }
 .event-label { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin-bottom: 12px; }
 .event-label strong { color: #405873; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .event-label :deep(.el-tag) { height: auto; min-height: 20px; white-space: normal; max-width: 100%; }
 .event-label :deep(.el-tag__content) { overflow-wrap: anywhere; }
-.confidence { font-size: 10px; color: #96a3b6; }
-.event-reason { font-size: 12px; line-height: 1.9; color: #71839e; overflow-wrap: anywhere; }
-.event-reason > span { font-size: 10px; color: #a4afc0; margin-right: 8px; }
+.confidence { font-size: 10px; color: #596579; }
+.event-reason { font-size: 12px; line-height: 1.9; color: #596579; overflow-wrap: anywhere; }
+.event-reason > span { font-size: 10px; color: #596579; margin-right: 8px; }
 .event-evidence { margin-top: 13px; padding-top: 11px; border-top: 1px solid #edf0f5; }
 summary { cursor: pointer; color: #7891b2; font-size: 11px; line-height: 1.8; }
 summary:focus-visible { outline: 2px solid #71a0ea; outline-offset: 3px; }
 dl { margin-top: 12px; background: #f7f9fc; padding: 12px; border-radius: 6px; }
-dt { font-size: 10px; color: #9caabf; margin-bottom: 4px; }
-dd { font-size: 11px; color: #7286a1; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 10px; }
+dt { font-size: 10px; color: #596579; margin-bottom: 4px; }
+dd { font-size: 11px; color: #596579; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 10px; }
 dd:last-child { margin-bottom: 0; }
 .full-trace { margin-top: 9px; }
-pre { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; font-size: 11px; background: #f7f9fc; color: #8393aa; padding: 12px; margin-top: 8px; border-radius: 6px; }
-.event-review-state { display: flex; justify-content: space-between; margin-top: 12px; font-size: 10px; color: #9faabb; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; font-size: 11px; background: #f7f9fc; color: #596579; padding: 12px; margin-top: 8px; border-radius: 6px; }
+.event-review-state { display: flex; justify-content: space-between; margin-top: 12px; font-size: 10px; color: #596579; }
 .event-review-state .pending { color: #ba9659; }
 .event-review-state small { font-size: 10px; }
 .review-action { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 15px; border-top: 1px solid #edf0f5; }
-.review-action > span { color: #9ba7b9; font-size: 10px; line-height: 1.6; }
+.review-action > span { color: #596579; font-size: 10px; line-height: 1.6; }
 .review-action :deep(.el-button) { font-size: 11px; flex-shrink: 0; }
 .review-action .el-icon { margin-left: 5px; }
-.batch-finished { display: flex; gap: 7px; align-items: center; color: #7e9f91; font-size: 11px; line-height: 1.8; }
-.output-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid #edf0f5; color: #9aa8bb; font-size: 10px; padding: 14px 24px; background: #fcfdff; }
+.batch-finished { display: flex; gap: 7px; align-items: center; color: #596579; font-size: 11px; line-height: 1.8; }
+.output-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid #edf0f5; color: #596579; font-size: 10px; padding: 14px 24px; background: #fcfdff; }
 .output-footer i { display: inline-block; width: 5px; height: 5px; background: #73ac9a; border-radius: 100%; margin-right: 6px; vertical-align: middle; }
 .output-footer i.busy { background: #d0ad6b; }
 .output-footer i.paused { background: #bd8a8a; }

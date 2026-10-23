@@ -479,7 +479,7 @@ onMounted(load)
 .purpose-desc {
   font-weight: 400;
   font-size: 12px;
-  color: #909399;
+  color: #596579;
 }
 .switch-row {
   display: flex;
@@ -493,6 +493,6 @@ onMounted(load)
 }
 .switch-hint {
   font-size: 12px;
-  color: #c0c4cc;
+  color: #596579;
 }
 </style>

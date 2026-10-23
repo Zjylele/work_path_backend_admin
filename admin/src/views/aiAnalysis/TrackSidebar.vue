@@ -87,7 +87,7 @@ import { formatDistance, formatTime, MAX_BATCH_SIZE } from './analysisDisplay'
 const props = defineProps({
   tracks: { type: Array, default: () => [] }, users: { type: Array, default: () => [] },
   tabs: { type: Array, default: () => [] }, selectedTracks: { type: Array, default: () => [] },
-  activeStatus: Number, total: Number, page: Number, loading: Boolean, submitting: Boolean,
+  activeStatus: [Number, String], total: Number, page: Number, loading: Boolean, submitting: Boolean,
   running: Boolean, listError: String, submitError: String
 })
 const emit = defineEmits(['tab', 'select', 'open', 'page', 'filter', 'refresh', 'send', 'clear', 'remove'])
@@ -121,20 +121,20 @@ function resetFilters() {
 <style scoped>
 .track-library { width: 316px; flex: 0 0 316px; display: flex; flex-direction: column; min-height: 0; background: #fbfcfe; border-right: 1px solid #e7ecf3; }
 .library-heading { padding: 24px 20px 18px; }
-.eyebrow { color: #8c9bb1; font-size: 11px; letter-spacing: 2px; }
+.eyebrow { color: #596579; font-size: 11px; letter-spacing: 2px; }
 .library-heading h2 { margin: 8px 0; font-size: 18px; font-weight: 600; color: #2b3c55; }
-.library-heading p { color: #8c98aa; font-size: 12px; line-height: 1.6; }
+.library-heading p { color: #596579; font-size: 12px; line-height: 1.6; }
 .status-tabs { display: flex; padding: 0 12px; border-bottom: 1px solid #e8edf4; }
-.status-tabs button { flex: 1; border: 0; border-bottom: 2px solid transparent; padding: 12px 0; background: transparent; color: #8491a6; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.status-tabs button { flex: 1; border: 0; border-bottom: 2px solid transparent; padding: 12px 0; background: transparent; color: #596579; font-size: 12px; cursor: pointer; white-space: nowrap; }
 .status-tabs button.active { color: #2f69cf; border-bottom-color: #2f69cf; font-weight: 600; }
 .status-tabs span { font-size: 10px; margin-left: 2px; }
 .library-filters { padding: 16px 16px 10px; }
 .library-filters :deep(.el-input__wrapper) { border-radius: 7px; }
 .filter-actions { display: flex; gap: 6px; align-items: center; margin-top: 10px; }
-.filter-summary { flex: 1; color: #8d9aab; font-size: 10px; }
+.filter-summary { flex: 1; color: #596579; font-size: 10px; }
 .filter-actions :deep(.el-button + .el-button) { margin-left: 0; }
 .filter-form { display: flex; flex-direction: column; gap: 10px; }
-.filter-form label { color: #7e8ba0; font-size: 12px; }
+.filter-form label { color: #596579; font-size: 12px; }
 .filter-buttons { display: flex; justify-content: flex-end; margin-top: 4px; }
 .track-list { flex: 1; min-height: 100px; overflow-y: auto; padding: 4px 12px; }
 .track-card { background: #fff; border: 1px solid #e4eaf2; border-radius: 8px; padding: 13px 11px 12px; margin-bottom: 10px; transition: border-color .15s, background .15s; }
@@ -146,28 +146,28 @@ function resetFilters() {
 .track-info { flex: 1; min-width: 0; }
 .track-name { color: #34465f; background: none; border: 0; font: inherit; font-weight: 600; font-size: 12px; text-align: left; cursor: pointer; line-height: 1.7; overflow-wrap: anywhere; }
 .track-name:hover { color: #2867cf; }
-.track-info p { font-size: 11px; color: #8290a4; margin: 5px 0; overflow-wrap: anywhere; }
-.track-info p span { color: #a0aabd; }
-.track-info time { color: #9ba6b6; font-size: 11px; }
-.track-meta { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin: 12px 0 0 24px; font-size: 10px; color: #8e9bae; }
+.track-info p { font-size: 11px; color: #596579; margin: 5px 0; overflow-wrap: anywhere; }
+.track-info p span { color: #596579; }
+.track-info time { color: #596579; font-size: 11px; }
+.track-meta { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin: 12px 0 0 24px; font-size: 10px; color: #596579; }
 .track-meta button { padding: 0; background: none; border: 0; font-size: 10px; color: #507fc4; cursor: pointer; white-space: nowrap; }
 .failed-label { color: #ba6c6c; }
-.library-empty { padding: 40px 10px; text-align: center; color: #95a1b3; font-size: 12px; }
-.library-empty > .el-icon { font-size: 26px; color: #b2bed0; }
+.library-empty { padding: 40px 10px; text-align: center; color: #596579; font-size: 12px; }
+.library-empty > .el-icon { font-size: 26px; color: #596579; }
 .library-empty p { margin: 12px 0; line-height: 1.8; }
 .library-empty span { font-size: 11px; }
 .library-pagination { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; gap: 5px; border-top: 1px solid #edf0f5; }
-.library-pagination > span { color: #95a1b2; font-size: 10px; }
+.library-pagination > span { color: #596579; font-size: 10px; }
 .library-pagination :deep(.el-pagination) { --el-pagination-button-width-small: 24px; --el-pagination-button-height-small: 24px; gap: 2px; }
 .selection-footer { padding: 12px 16px 14px; background: white; border-top: 1px solid #e7ecf3; }
-.selection-count { display: flex; align-items: center; justify-content: space-between; color: #8b99ab; font-size: 11px; margin-bottom: 8px; }
+.selection-count { display: flex; align-items: center; justify-content: space-between; color: #596579; font-size: 11px; margin-bottom: 8px; }
 .selection-count b { color: #3972c4; }
 .selection-count :deep(.el-button) { font-size: 11px; }
 .selected-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; max-height: 72px; overflow-y: auto; }
 .selected-chips :deep(.el-tag) { max-width: 100%; height: auto; min-height: 22px; white-space: normal; }
 .selected-chips :deep(.el-tag__content) { overflow-wrap: anywhere; }
 .send-button { width: 100%; height: 38px; border-radius: 7px; --el-color-primary: #2e69d4; }
-.selection-note { text-align: center; font-size: 10px; color: #9aa6b7; margin-top: 10px; line-height: 1.6; }
+.selection-note { text-align: center; font-size: 10px; color: #596579; margin-top: 10px; line-height: 1.6; }
 .submit-error { color: #b55e60; font-size: 11px; line-height: 1.7; margin-bottom: 10px; }
 button:focus-visible { outline: 2px solid #71a0ea; outline-offset: 3px; }
 @media (max-width: 1200px) { .track-library { width: 288px; flex-basis: 288px; } .library-heading { padding-left: 17px; } }

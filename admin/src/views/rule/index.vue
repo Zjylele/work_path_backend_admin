@@ -335,7 +335,7 @@ onMounted(load)
 .clause-content {
   margin-left: 8px;
   font-size: 12px;
-  color: #909399;
+  color: #596579;
 }
 .station-row {
   display: flex;
@@ -343,11 +343,11 @@ onMounted(load)
 }
 .hint {
   font-size: 12px;
-  color: #909399;
+  color: #596579;
   line-height: 1.6;
 }
 .unit {
   margin-left: 8px;
-  color: #909399;
+  color: #596579;
 }
 </style>

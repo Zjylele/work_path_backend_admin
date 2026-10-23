@@ -13,8 +13,8 @@ export function useAnalysisWorkspace() {
   const users = ref([])
   const batches = ref([])
   const selected = ref(new Map())
-  const activeStatus = ref(0)
-  const counts = reactive({ 0: null, 1: null, 2: null, 3: null })
+  const activeStatus = ref('all')
+  const counts = reactive({ all: null, 0: null, 1: null, 2: null, 3: null })
   const query = reactive({ page: 1, pageSize: 10, userId: null, startTime: null, endTime: null })
   const loading = ref(false)
   const submitting = ref(false)
@@ -61,7 +61,7 @@ export function useAnalysisWorkspace() {
       ...params,
       page: tab.value === status ? params.page : 1,
       pageSize: tab.value === status ? params.pageSize : 1,
-      analysisStatuses: String(tab.value)
+      analysisStatuses: tab.value === 'all' ? '0,1,2,3' : String(tab.value)
     })))
     if (disposed || version !== listVersion) return
     responses.forEach((response, index) => {

@@ -39,6 +39,27 @@ import static org.mockito.Mockito.when;
  */
 class WorkEventServiceTest {
 
+    @Test
+    void trackGroupsCountAllStatusesWithoutSplittingTrackAcrossPages() {
+        Track track = new Track(); track.setId(10L); track.setUserId(2L); track.setName("演示轨迹");
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<Track> page =
+                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(1, 10, 1);
+        page.setRecords(List.of(track));
+        when(trackMapper.selectPage(any(com.baomidou.mybatisplus.extension.plugins.pagination.Page.class), any()))
+                .thenReturn(page);
+        WorkEvent pending = event(0); pending.setTrackId(10L); pending.setSemanticLabel("客户拜访");
+        WorkEvent approved = event(1); approved.setTrackId(10L); approved.setSemanticLabel("客户拜访");
+        WorkEvent rejected = event(2); rejected.setTrackId(10L);
+        when(workEventMapper.selectList(any(com.baomidou.mybatisplus.core.conditions.Wrapper.class)))
+                .thenReturn(List.of(pending, approved, rejected));
+        when(userMapper.selectBatchIds(any())).thenReturn(List.of());
+        var result = service.listTracks(0, 1, 10);
+        assertThat(result.getTotal()).isEqualTo(1);
+        assertThat(result.getList()).hasSize(1);
+        assertThat(result.getList().get(0)).containsEntry("eventCount", 3)
+                .containsEntry("pending", 1L).containsEntry("approved", 1L).containsEntry("rejected", 1L);
+    }
+
     private WorkEventMapper workEventMapper;
     private TrackMapper trackMapper;
     private UserMapper userMapper;

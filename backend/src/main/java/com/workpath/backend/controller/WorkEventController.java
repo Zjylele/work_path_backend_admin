@@ -30,6 +30,14 @@ public class WorkEventController {
 
     private final WorkEventService workEventService;
 
+    @GetMapping("/track-groups")
+    public Result<PageVO<java.util.Map<String, Object>>> trackGroups(
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "10") Integer pageSize,
+            @RequestParam(required = false) Integer confirmStatus) {
+        return Result.success(workEventService.listTracks(confirmStatus, page, pageSize));
+    }
+
     @Operation(summary = "工作事件列表（分页）")
     @GetMapping
     public Result<PageVO<WorkEvent>> list(

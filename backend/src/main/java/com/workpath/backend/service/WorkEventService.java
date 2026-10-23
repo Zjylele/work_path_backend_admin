@@ -49,6 +49,41 @@ public class WorkEventService {
     private final ComplianceService complianceService;
     private final AnalysisTaskQueue analysisTaskQueue;
 
+    public PageVO<Map<String, Object>> listTracks(Integer status, Integer page, Integer pageSize) {
+        LambdaQueryWrapper<Track> query = new LambdaQueryWrapper<>();
+        query.inSql(Track::getId, "SELECT DISTINCT track_id FROM work_event"
+                + (status == null ? "" : " WHERE confirm_status = " + status));
+        query.orderByDesc(Track::getStartTime).orderByDesc(Track::getId);
+        Page<Track> tracks = trackMapper.selectPage(new Page<>(normalize(page, 1),
+                Math.min(normalize(pageSize, 10), 50)), query);
+        List<Long> ids = tracks.getRecords().stream().map(Track::getId).toList();
+        Map<Long, List<WorkEvent>> grouped = ids.isEmpty() ? Map.of() : workEventMapper.selectList(
+                new LambdaQueryWrapper<WorkEvent>().in(WorkEvent::getTrackId, ids)
+                        .orderByAsc(WorkEvent::getStartTime)).stream().collect(Collectors.groupingBy(WorkEvent::getTrackId));
+        List<Long> users = tracks.getRecords().stream().map(Track::getUserId).distinct().toList();
+        Map<Long, String> names = users.isEmpty() ? Map.of() : userMapper.selectBatchIds(users).stream()
+                .collect(Collectors.toMap(com.workpath.backend.entity.User::getId,
+                        com.workpath.backend.entity.User::getUsername, (a, b) -> a));
+        Page<Map<String, Object>> result = new Page<>(tracks.getCurrent(), tracks.getSize(), tracks.getTotal());
+        result.setRecords(tracks.getRecords().stream().map(track -> {
+            Map<String, Object> row = new HashMap<>();
+            List<WorkEvent> events = grouped.getOrDefault(track.getId(), List.of());
+            row.put("trackId", track.getId()); row.put("name", track.getName());
+            row.put("username", names.get(track.getUserId()));
+            row.put("startTime", track.getStartTime()); row.put("endTime", track.getEndTime());
+            row.put("eventCount", events.size());
+            for (int s = 0; s < 3; s++) {
+                final int value = s;
+                row.put(new String[]{"pending", "approved", "rejected"}[s],
+                        events.stream().filter(e -> Integer.valueOf(value).equals(e.getConfirmStatus())).count());
+            }
+            row.put("labels", events.stream().collect(Collectors.groupingBy(
+                    e -> e.getSemanticLabel() == null ? "未标注" : e.getSemanticLabel(), Collectors.counting())));
+            return row;
+        }).toList());
+        return PageVO.of(result);
+    }
+
     /**
      * 确认动作的结果。
      *

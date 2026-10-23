@@ -134,7 +134,7 @@ async function handleLogin() {
 
 .login-sub {
   text-align: center;
-  color: #909399;
+  color: #596579;
   font-size: 13px;
   margin: 8px 0 24px;
 }
