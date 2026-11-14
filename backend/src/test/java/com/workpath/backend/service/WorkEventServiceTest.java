@@ -39,10 +39,32 @@ import static org.mockito.Mockito.when;
  */
 class WorkEventServiceTest {
 
+    @Test
+    void trackGroupsCountAllStatusesWithoutSplittingTrackAcrossPages() {
+        Track track = new Track(); track.setId(10L); track.setUserId(2L); track.setName("演示轨迹");
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<Track> page =
+                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(1, 10, 1);
+        page.setRecords(List.of(track));
+        when(trackMapper.selectPage(any(com.baomidou.mybatisplus.extension.plugins.pagination.Page.class), any()))
+                .thenReturn(page);
+        WorkEvent pending = event(0); pending.setTrackId(10L); pending.setSemanticLabel("客户拜访");
+        WorkEvent approved = event(1); approved.setTrackId(10L); approved.setSemanticLabel("客户拜访");
+        WorkEvent rejected = event(2); rejected.setTrackId(10L);
+        when(workEventMapper.selectList(any(com.baomidou.mybatisplus.core.conditions.Wrapper.class)))
+                .thenReturn(List.of(pending, approved, rejected));
+        when(userMapper.selectBatchIds(any())).thenReturn(List.of());
+        var result = service.listTracks(0, 1, 10);
+        assertThat(result.getTotal()).isEqualTo(1);
+        assertThat(result.getList()).hasSize(1);
+        assertThat(result.getList().get(0)).containsEntry("eventCount", 3)
+                .containsEntry("pending", 1L).containsEntry("approved", 1L).containsEntry("rejected", 1L);
+    }
+
     private WorkEventMapper workEventMapper;
     private TrackMapper trackMapper;
     private UserMapper userMapper;
     private ComplianceService complianceService;
+    private AnalysisTaskQueue analysisTaskQueue;
     private WorkEventService service;
 
     @BeforeEach
@@ -51,7 +73,9 @@ class WorkEventServiceTest {
         trackMapper = Mockito.mock(TrackMapper.class);
         userMapper = Mockito.mock(UserMapper.class);
         complianceService = Mockito.mock(ComplianceService.class);
-        service = new WorkEventService(workEventMapper, trackMapper, userMapper, complianceService);
+        analysisTaskQueue = Mockito.mock(AnalysisTaskQueue.class);
+        service = new WorkEventService(workEventMapper, trackMapper, userMapper,
+                complianceService, analysisTaskQueue);
         // patch 依赖 updateById 的返回行数；mock 默认 0 会被当成"事件已消失"
         when(workEventMapper.updateById(any(WorkEvent.class))).thenReturn(1);
         when(trackMapper.updateById(any(Track.class))).thenReturn(1);
@@ -243,16 +267,18 @@ class WorkEventServiceTest {
     }
 
     @Test
-    @DisplayName("重新分析：无已确认事件时置回未分析，等定时任务捞起")
-    void reanalyzeResetsStatusWhenNothingConfirmed() {
+    @DisplayName("重新分析：立即投递到分析队列，而不是置回 0 等定时任务")
+    void reanalyzeDispatchesToQueueInsteadOfWaitingForScheduler() {
+        // 定时任务入口已移除，置回 0 等于石沉大海——没有任何代码会查状态 0 的轨迹。
+        // 重新分析必须直接把这条轨迹送进手动批次，让它真的被分析。
         when(trackMapper.selectById(7L)).thenReturn(track());
         when(workEventMapper.selectCount(any())).thenReturn(0L);
 
         service.reanalyze(7L);
 
-        ArgumentCaptor<Track> cap = ArgumentCaptor.forClass(Track.class);
-        verify(trackMapper).updateById(cap.capture());
-        assertThat(cap.getValue().getAnalysisStatus()).isZero();
+        verify(analysisTaskQueue).startManualBatch(List.of(7L));
+        // 不再走 updateById 置 0：状态由批次自己按 0/3 -> 1 -> 2/3 推进
+        verify(trackMapper, never()).updateById(any(Track.class));
     }
 
     @Test

@@ -26,6 +26,30 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class StayPointDetectorTest {
 
+    @Test
+    void returningAlongSameRoadDoesNotCreateLongStays() {
+        List<double[]> raw = new ArrayList<>();
+        raw.addAll(movingLine(23.1291, 113.2644, 100, 20));
+        List<double[]> back = movingLine(23.1291, 113.2644, 100, 20);
+        java.util.Collections.reverse(back);
+        raw.addAll(back);
+        assertThat(detector().detect(points(raw, T0))).isEmpty();
+    }
+
+    @Test
+    void separateVisitsToSamePlaceRemainSeparateStays() {
+        List<double[]> raw = new ArrayList<>();
+        raw.addAll(stationaryCluster(23.1291, 113.2644, 121));
+        raw.addAll(movingLine(23.1291, 113.2644, 100, 20));
+        List<double[]> back = movingLine(23.1291, 113.2644, 100, 20);
+        java.util.Collections.reverse(back);
+        raw.addAll(back);
+        raw.addAll(stationaryCluster(23.1291, 113.2644, 121));
+        List<StayPoint> stays = detector().detect(points(raw, T0));
+        assertThat(stays).hasSize(2);
+        assertThat(stays.get(0).getEndTime()).isBefore(stays.get(1).getStartTime());
+    }
+
     private static final LocalDateTime T0 =
             LocalDateTime.of(2026, 6, 14, 9, 0, 0);
 

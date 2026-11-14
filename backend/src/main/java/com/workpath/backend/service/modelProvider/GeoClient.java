@@ -48,7 +48,10 @@ public class GeoClient {
      */
     private static final int COORD_SCALE = 5;
 
-    /** 连接与读取超时。外网抖一下很正常，但不能让它拖垮整轮定时任务。 */
+    /**
+     * 连接与读取超时。外网抖一下很正常，但不能让它拖垮整批分析——
+     * 批次最多 10 条串行执行，每条都要等 POI，超时一长整批就卡住了。
+     */
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(3);
 
     /**

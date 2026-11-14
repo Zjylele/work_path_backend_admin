@@ -24,6 +24,9 @@ public class AnalysisTaskQueue {
 
     private static final int MAX_BATCH_SIZE = 10;
 
+    /** 僵死「分析中」的判定阈值（分钟）。单批 10 条串行实测 1-3 分钟，留十倍余量。 */
+    static final int STALE_RUNNING_MINUTES = 30;
+
     private final TrackMapper trackMapper;
     private final TrackAnalysisService analysisService;
     private final TaskExecutor executor;
@@ -100,5 +103,33 @@ public class AnalysisTaskQueue {
         patch.setId(trackId);
         patch.setAnalysisStatus(status);
         trackMapper.updateById(patch);
+    }
+
+    /**
+     * 僵死的「分析中(1)」自救：把超过阈值还没跑完的轨迹复位为失败(3)。
+     *
+     * <p><b>为什么需要它</b>：批次在事务提交后由单线程池执行，
+     * {@code processBatch} 只对<b>抛异常</b>的情况置 3。如果进程在分析途中
+     * 被杀、机器断电、或线程池任务还没跑完服务就重启，轨迹会永久停在 1。
+     * 而前端只对 0 和 3 显示复选框、提供重试入口——停在 1 的轨迹
+     * 既不能被重新发起，也读不到事件（本来就没产出），管理员没有任何操作路径，
+     * 只能看着它永远挂在「进行中」页签里。</p>
+     *
+     * <p>阈值取 30 分钟：单批最多 10 条、串行执行，每条含 POI 与模型调用，
+     * 实测一轮通常 1-3 分钟；30 分钟留了十倍余量，正常批次绝不可能被误伤。</p>
+     *
+     * <p>由应用启动钩子调用一次（见 {@code StaleAnalysisRecoveryRunner}）。
+     * 不做定时轮询：那需要额外引入调度，而这个问题在启动时修一次就够。</p>
+     *
+     * @return 被复位的轨迹条数
+     */
+    public int recoverStaleRunningTracks() {
+        int reset = trackMapper.resetStaleRunningTracks(
+                TrackAnalysisService.STATUS_FAILED, STALE_RUNNING_MINUTES);
+        if (reset > 0) {
+            log.warn("复位僵死的分析中轨迹 {} 条：超过 {} 分钟未完成，已置为失败(3)可重新发起",
+                    reset, STALE_RUNNING_MINUTES);
+        }
+        return reset;
     }
 }

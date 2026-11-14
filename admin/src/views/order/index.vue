@@ -322,6 +322,6 @@ onMounted(() => {
 }
 .hint-text {
   font-size: 12px;
-  color: #c0c4cc;
+  color: #596579;
 }
 </style>

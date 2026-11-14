@@ -1,6 +1,7 @@
 export const MAX_BATCH_SIZE = 10
 
 export const STATUS_TABS = [
+  { value: 'all', label: '全部' },
   { value: 0, label: '待分析' },
   { value: 1, label: '进行中' },
   { value: 2, label: '已完成' },

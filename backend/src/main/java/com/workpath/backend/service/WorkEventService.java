@@ -25,8 +25,8 @@ import java.util.stream.Collectors;
  * 工作事件查询服务。M4 产出的人工复核入口。
  *
  * <p>职责只有「读」：列表、详情、确认/驳回。写入侧在 TrackAnalysisService。
- * 分开是因为两者的读写频率与事务边界完全不同——AI 分析由定时任务批量驱动，
- * 复核是人一条条看的，混在一个 Service 里会让定时任务的 @Transactional
+ * 分开是因为两者的读写频率与事务边界完全不同——AI 分析由手动批次驱动，
+ * 复核是人一条条看的，混在一个 Service 里会让批量的 @Transactional
  * 覆盖到人看的查询路径上。</p>
  */
 @Slf4j
@@ -47,6 +47,42 @@ public class WorkEventService {
     private final TrackMapper trackMapper;
     private final UserMapper userMapper;
     private final ComplianceService complianceService;
+    private final AnalysisTaskQueue analysisTaskQueue;
+
+    public PageVO<Map<String, Object>> listTracks(Integer status, Integer page, Integer pageSize) {
+        LambdaQueryWrapper<Track> query = new LambdaQueryWrapper<>();
+        query.inSql(Track::getId, "SELECT DISTINCT track_id FROM work_event"
+                + (status == null ? "" : " WHERE confirm_status = " + status));
+        query.orderByDesc(Track::getStartTime).orderByDesc(Track::getId);
+        Page<Track> tracks = trackMapper.selectPage(new Page<>(normalize(page, 1),
+                Math.min(normalize(pageSize, 10), 50)), query);
+        List<Long> ids = tracks.getRecords().stream().map(Track::getId).toList();
+        Map<Long, List<WorkEvent>> grouped = ids.isEmpty() ? Map.of() : workEventMapper.selectList(
+                new LambdaQueryWrapper<WorkEvent>().in(WorkEvent::getTrackId, ids)
+                        .orderByAsc(WorkEvent::getStartTime)).stream().collect(Collectors.groupingBy(WorkEvent::getTrackId));
+        List<Long> users = tracks.getRecords().stream().map(Track::getUserId).distinct().toList();
+        Map<Long, String> names = users.isEmpty() ? Map.of() : userMapper.selectBatchIds(users).stream()
+                .collect(Collectors.toMap(com.workpath.backend.entity.User::getId,
+                        com.workpath.backend.entity.User::getUsername, (a, b) -> a));
+        Page<Map<String, Object>> result = new Page<>(tracks.getCurrent(), tracks.getSize(), tracks.getTotal());
+        result.setRecords(tracks.getRecords().stream().map(track -> {
+            Map<String, Object> row = new HashMap<>();
+            List<WorkEvent> events = grouped.getOrDefault(track.getId(), List.of());
+            row.put("trackId", track.getId()); row.put("name", track.getName());
+            row.put("username", names.get(track.getUserId()));
+            row.put("startTime", track.getStartTime()); row.put("endTime", track.getEndTime());
+            row.put("eventCount", events.size());
+            for (int s = 0; s < 3; s++) {
+                final int value = s;
+                row.put(new String[]{"pending", "approved", "rejected"}[s],
+                        events.stream().filter(e -> Integer.valueOf(value).equals(e.getConfirmStatus())).count());
+            }
+            row.put("labels", events.stream().collect(Collectors.groupingBy(
+                    e -> e.getSemanticLabel() == null ? "未标注" : e.getSemanticLabel(), Collectors.counting())));
+            return row;
+        }).toList());
+        return PageVO.of(result);
+    }
 
     /**
      * 确认动作的结果。
@@ -247,9 +283,13 @@ public class WorkEventService {
     /**
      * 触发某条轨迹重新分析。
      *
-     * <p>把 analysis_status 置回 0（未分析），下一轮定时任务（30s）自然捞起它。
-     * 不在这里同步调 analyze——那会让 HTTP 请求等一个可能几十秒的分析，
-     * 违背"定时捞 + 异步执行"的初衷。</p>
+     * <p>直接投递到手动分析批次，<b>不再置回 0 等定时任务</b>——定时捞取入口
+     * 在手动分析工作流上线时就移除了，全仓没有任何代码再查 {@code analysis_status=0}
+     * 的轨迹，置回 0 的轨迹会一直挂在「待分析」再也跑不起来。
+     * 批次自己会按 0/3 → 1 → 2/3 推进状态，这里不重复写状态。</p>
+     *
+     * <p>不在 HTTP 请求里同步调 analyze：那会让请求等一个可能几十秒的分析。
+     * 批次跑在事务提交后的线程池里，响应仍然立即返回。</p>
      *
      * <p><b>已确认事件是红线</b>：analyze 会先删除该轨迹的全部事件再重建
      * （TrackAnalysisService.deleteExistingEvents），已确认事件被删后，它触发过的
@@ -270,12 +310,10 @@ public class WorkEventService {
                             + "并使其核查结论与工单失去依据，已阻止");
         }
 
-        Track patch = new Track();
-        patch.setId(trackId);
-        // 只设 id 与 analysisStatus 两个字段，updateById 便只会更新 analysis_status
-        patch.setAnalysisStatus(0);
-        trackMapper.updateById(patch);
-        log.info("已提交重新分析 trackId={}，将在下一轮定时任务中执行", trackId);
+        // 走手动批次：它内部会校验状态可发起（0/3）并用条件更新原子占用，
+        // 重复点击会被"已被其他操作启动"挡住，不会并发跑两次分析。
+        analysisTaskQueue.startManualBatch(List.of(trackId));
+        log.info("已提交重新分析 trackId={}，交由手动分析批次执行", trackId);
     }
 
     /** selectCount 的判空包装：MyBatis-Plus 正常返回 0，mock 环境可能给 null。 */

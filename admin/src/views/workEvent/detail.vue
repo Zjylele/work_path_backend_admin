@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="analysis-detail">
     <!-- 顶部：轨迹摘要 -->
     <el-card shadow="never" class="head-card">
       <template #header>
@@ -45,10 +45,10 @@
       </el-descriptions>
     </el-card>
 
-    <el-row :gutter="16" class="body">
-      <!-- 左：轨迹 + 停留点 -->
-      <el-col :span="14">
-        <el-card shadow="never">
+    <div class="detail-stack">
+      <!-- 地图到顶后保持可见 -->
+      <section ref="mapSection" class="map-section">
+        <el-card shadow="never" class="map-card">
           <template #header>
             <div class="card-head">
               <span>轨迹与停留点</span>
@@ -69,29 +69,38 @@
           />
           <el-empty v-else description="该轨迹没有坐标点，无法绘制" />
         </el-card>
-      </el-col>
+      </section>
 
-      <!-- 右：工作事件时序 -->
-      <el-col :span="10">
-        <el-card shadow="never" v-loading="loading">
+      <!-- 工作事件独立滚动 -->
+      <section class="events-section">
+        <el-card shadow="never" v-loading="loading" class="events-card">
           <template #header>
             <div class="card-head">
               <span>工作事件时序（{{ events.length }}）</span>
-              <el-button link type="warning" @click="handleReanalyze">重新分析</el-button>
+              <el-button link type="warning" :disabled="busy" @click="handleReanalyze">重新分析</el-button>
             </div>
           </template>
 
+          <div ref="eventScroll" class="event-scroll" @wheel="scrollEvents">
+          <div class="batch-toolbar">
+            <el-checkbox :model-value="allPageSelected" :indeterminate="somePageSelected" :disabled="busy || !pagePending.length" @change="selectPage">全选本页待确认</el-checkbox>
+            <el-button type="success" size="small" :disabled="busy || !selectedIds.length" :loading="batchBusy" @click="handleBatchConfirm">批量确认（{{ selectedIds.length }}）</el-button>
+            <span v-if="batchBusy">正在处理 {{ batchProgress }} / {{ batchTotal }}</span>
+          </div>
+          <el-alert v-if="batchReport" :title="batchReport" :type="batchHasErrors ? 'warning' : 'success'" :closable="false" show-icon class="batch-report" />
           <el-empty v-if="!events.length" :description="emptyDescription" />
 
           <div
-            v-for="(e, i) in events"
+            v-for="(e, i) in pagedEvents"
             :key="e.eventId"
+            :data-event-id="e.eventId"
             class="event-item"
             :class="{ active: activeEventId === e.eventId }"
             @click="focusEvent(e)"
           >
             <div class="event-line">
-              <span class="idx">{{ i + 1 }}</span>
+              <el-checkbox v-if="e.confirmStatus === 0" :model-value="selectedIds.includes(e.eventId)" :disabled="busy" :aria-label="`选择事件 ${e.eventId}`" @click.stop @change="toggleSelection(e.eventId, $event)" />
+              <span class="idx">{{ (eventPage - 1) * eventPageSize + i + 1 }}</span>
               <span class="time">{{ e.startTime }} → {{ e.endTime }}</span>
               <el-tag size="small" :type="statusTagType(e.confirmStatus)">
                 {{ statusLabel(e.confirmStatus) }}
@@ -122,25 +131,27 @@
             </el-collapse>
 
             <div v-if="e.confirmStatus === 0" class="event-actions">
-              <el-button size="small" type="success" @click.stop="handleConfirm(e)">
+              <el-button size="small" type="success" :disabled="busy" @click.stop="handleConfirm(e)">
                 确认
               </el-button>
-              <el-button size="small" type="danger" @click.stop="handleReject(e)">
+              <el-button size="small" type="danger" :disabled="busy" @click.stop="handleReject(e)">
                 驳回
               </el-button>
             </div>
             <div v-else-if="e.confirmStatus === 1" class="event-actions">
-              <el-button size="small" @click.stop="handleRevoke(e)">撤销确认</el-button>
+              <el-button size="small" :disabled="busy" @click.stop="handleRevoke(e)">撤销确认</el-button>
             </div>
           </div>
+          </div>
+          <el-pagination v-if="events.length" :current-page="eventPage" :page-size="eventPageSize" :total="events.length" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next" :disabled="busy" @current-change="changeEventPage" @size-change="changeEventPageSize" class="event-pagination" />
         </el-card>
-      </el-col>
-    </el-row>
+      </section>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Back } from '@element-plus/icons-vue'
@@ -164,6 +175,67 @@ const points = ref([])
 const events = ref([])
 const activeEventId = ref(null)
 const mapRef = ref(null)
+const mapSection = ref(null)
+const eventScroll = ref(null)
+function scrollEvents(event) {
+  const outer = mapSection.value?.closest('.admin-main')
+  if (!outer || event.deltaY <= 0 || event.ctrlKey) return
+  const gap = mapSection.value.getBoundingClientRect().top - outer.getBoundingClientRect().top
+  if (gap > 1) {
+    event.preventDefault()
+    const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? outer.clientHeight : 1)
+    const move = Math.min(delta, gap)
+    outer.scrollTop += move
+    eventScroll.value.scrollTop += delta - move
+  }
+}
+const eventPage = ref(1)
+const eventPageSize = ref(10)
+const selectedIds = ref([])
+const batchBusy = ref(false)
+const batchProgress = ref(0)
+const batchTotal = ref(0)
+const batchReport = ref('')
+const batchHasErrors = ref(false)
+const busy = computed(() => batchBusy.value || loading.value)
+const pagedEvents = computed(() => events.value.slice((eventPage.value - 1) * eventPageSize.value, eventPage.value * eventPageSize.value))
+const pagePending = computed(() => pagedEvents.value.filter(e => e.confirmStatus === 0))
+const allPageSelected = computed(() => pagePending.value.length > 0 && pagePending.value.every(e => selectedIds.value.includes(e.eventId)))
+const somePageSelected = computed(() => !allPageSelected.value && pagePending.value.some(e => selectedIds.value.includes(e.eventId)))
+function toggleSelection(id, checked) {
+  selectedIds.value = checked ? [...new Set([...selectedIds.value, id])] : selectedIds.value.filter(value => value !== id)
+}
+function selectPage(checked) { selectedIds.value = checked ? pagePending.value.map(e => e.eventId) : [] }
+function changeEventPage(page) { eventPage.value = page; selectedIds.value = [] }
+function changeEventPageSize(size) { eventPageSize.value = size; changeEventPage(1) }
+async function handleBatchConfirm() {
+  if (busy.value || !selectedIds.value.length) return
+  const ids = [...selectedIds.value]
+  try {
+    await ElMessageBox.confirm(`确认选中的 ${ids.length} 条事件？每条确认后将触发合规核查，可能生成整改工单。`, '批量确认', { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' })
+  } catch { return }
+  if (busy.value) return
+  batchBusy.value = true; batchProgress.value = 0; batchTotal.value = ids.length; batchReport.value = ''
+  let success = 0, checkFailed = 0, newChecks = 0
+  const failed = []
+  try {
+    for (const id of ids) {
+      try {
+        const res = await confirmWorkEvent(id)
+        success++
+        if (res.data?.checkFailed) checkFailed++
+        newChecks += res.data?.newChecks || 0
+        const event = events.value.find(e => e.eventId === id)
+        if (event) event.confirmStatus = 1
+      } catch { failed.push(id) }
+      batchProgress.value++
+    }
+    batchHasErrors.value = failed.length > 0 || checkFailed > 0
+    batchReport.value = `确认成功 ${success} 条，确认失败 ${failed.length} 条；新增核查结论 ${newChecks} 条，已确认但核查失败 ${checkFailed} 条。${failed.length ? '失败事件：' + failed.join('、') + '，请核对状态后重试。' : ''}`
+    selectedIds.value = failed
+    try { await load() } catch { batchHasErrors.value = true; batchReport.value += ' 列表刷新失败，请刷新页面核对最终状态。' }
+  } finally { batchBusy.value = false }
+}
 
 /** 复核状态 → 地图标记颜色。三态在图上必须一眼分开，这是这一屏的意义所在 */
 const STATUS_COLOR = { 0: '#faad14', 1: '#52c41a', 2: '#f5222d' }
@@ -195,7 +267,7 @@ const overlays = computed(() =>
 const emptyDescription = computed(() => {
   switch (track.value?.analysisStatus) {
     case 0:
-      return '该轨迹尚未分析，下一轮定时任务（30 秒）会捞起它'
+      return '该轨迹尚未分析，请在 AI 轨迹分析页选择并提交'
     case 1:
       return '该轨迹正在分析中，稍后刷新'
     case 3:
@@ -224,6 +296,8 @@ async function load() {
     track.value = trackRes.data
     points.value = trackRes.data?.points || []
     events.value = eventRes.data || []
+    eventPage.value = Math.min(eventPage.value, Math.max(1, Math.ceil(events.value.length / eventPageSize.value)))
+    selectedIds.value = selectedIds.value.filter(id => pagedEvents.value.some(e => e.eventId === id && e.confirmStatus === 0))
   } finally {
     loading.value = false
   }
@@ -238,10 +312,17 @@ function focusEvent(e) {
 }
 
 /** 点击地图上的停留点：反向高亮右侧对应条目 */
-function onMapOverlayClick(overlay) {
+async function onMapOverlayClick(overlay) {
+  if (busy.value) return
   const target = events.value.find((e) => e.eventId === overlay.id)
   if (target) {
+    const index = events.value.indexOf(target)
+    const page = Math.floor(index / eventPageSize.value) + 1
+    if (page !== eventPage.value) changeEventPage(page)
     activeEventId.value = target.eventId
+    await nextTick()
+    const item = eventScroll.value?.querySelector(`[data-event-id="${target.eventId}"]`)
+    if (item) eventScroll.value.scrollTop += item.getBoundingClientRect().top - eventScroll.value.getBoundingClientRect().top - 8
   }
 }
 
@@ -294,7 +375,7 @@ async function handleRevoke(e) {
 
 async function handleReanalyze() {
   await ElMessageBox.confirm(
-    `重新分析轨迹 #${trackId}？旧结论会被清空，下一轮定时任务（30 秒）重新分析。`,
+    `重新分析轨迹 #${trackId}？将提交重新分析任务，旧分析结果将更新。`,
     '重新分析',
     { type: 'warning', confirmButtonText: '提交', cancelButtonText: '取消' }
   )
@@ -318,6 +399,31 @@ onMounted(load)
 </script>
 
 <style scoped>
+.analysis-detail { --map-panel-height: clamp(220px, 36dvh, 420px); }
+.detail-stack { display: flex; flex-direction: column; gap: 16px; }
+.map-section { position: sticky; top: 0; z-index: 10; background: #f7f8fa; }
+.map-card { height: var(--map-panel-height); display: flex; flex-direction: column; }
+.map-card :deep(.el-card__header) { flex-shrink: 0; padding: 14px 20px; }
+.map-card :deep(.el-card__body) { flex: 1; min-height: 0; padding: 12px 20px; }
+.map-card :deep(.track-map-shell), .map-card :deep(.track-map) { height: 100%; }
+.events-card { height: max(260px, calc(100dvh - 124px - var(--map-panel-height))); display: flex; flex-direction: column; }
+.events-card :deep(.el-card__header) { flex-shrink: 0; }
+.events-card :deep(.el-card__body) { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 20px 16px; }
+.event-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: 16px 4px 0 0; scrollbar-gutter: stable; }
+.event-pagination { flex-shrink: 0; }
+.event-pagination :deep(.el-pager li.is-active) { font-size: 18px; font-weight: 700; }
+@media (max-width: 768px) {
+  .analysis-detail { --map-panel-height: clamp(190px, 32dvh, 300px); }
+  .map-card :deep(.el-card__header), .events-card :deep(.el-card__header) { padding: 12px; }
+  .map-card :deep(.el-card__body) { padding: 8px 12px; }
+  .events-card :deep(.el-card__body) { padding-left: 12px; padding-right: 12px; }
+  .legend { flex-wrap: wrap; }
+}
+
+.batch-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; color: #596579; }
+.batch-report { margin-bottom: 16px; }
+.event-pagination { margin-top: 16px; flex-wrap: wrap; gap: 8px; }
+
 .head-card {
   margin-bottom: 16px;
 }
@@ -386,7 +492,7 @@ onMounted(load)
 
 .time {
   font-size: 12px;
-  color: #909399;
+  color: #596579;
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -413,7 +519,7 @@ onMounted(load)
 
 .conf {
   font-size: 12px;
-  color: #909399;
+  color: #596579;
 }
 
 .event-sub {
@@ -425,7 +531,7 @@ onMounted(load)
 .event-reason {
   margin-top: 4px;
   font-size: 12px;
-  color: #909399;
+  color: #596579;
   line-height: 1.6;
 }
 

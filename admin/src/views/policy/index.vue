@@ -445,7 +445,7 @@ onMounted(loadDocuments)
   font-size: 13px;
 }
 .file-tip {
-  color: #909399;
+  color: #596579;
   font-size: 12px;
 }
 .card-header {
@@ -475,7 +475,7 @@ onMounted(loadDocuments)
 }
 .answer-cites-title {
   font-size: 12px;
-  color: #909399;
+  color: #596579;
   margin-bottom: 6px;
 }
 .cite {
@@ -497,7 +497,7 @@ onMounted(loadDocuments)
 }
 .cite-score {
   font-size: 12px;
-  color: #909399;
+  color: #596579;
 }
 .cite-content {
   margin-top: 4px;
@@ -506,7 +506,7 @@ onMounted(loadDocuments)
   color: #303133;
 }
 .empty {
-  color: #909399;
+  color: #596579;
   font-size: 13px;
   text-align: center;
   padding: 16px 0;
@@ -530,7 +530,7 @@ onMounted(loadDocuments)
 }
 .hit-score {
   font-size: 12px;
-  color: #909399;
+  color: #596579;
 }
 .hit-content {
   font-size: 13px;

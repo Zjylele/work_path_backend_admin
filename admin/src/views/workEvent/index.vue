@@ -3,7 +3,7 @@
     <el-alert type="warning" :closable="false" show-icon style="margin-bottom: 16px">
       <template #title>
         AI 分析结果以「疑似事件、待人工复核」的形式输出。只有点击「确认」后，
-        该事件才会成为 M5 合规核查的依据——这是「管理辅助工具」定位的落点，
+        该事件才会成为合规核查的依据。列表按轨迹汇总，请进入分析详情逐条复核，
         未经确认的结论不会自动变成管理行为。
       </template>
     </el-alert>
@@ -11,7 +11,7 @@
     <el-card shadow="never">
       <div class="toolbar">
         <el-select v-model="confirmStatus" placeholder="复核状态" clearable style="width: 160px" @change="handleFilterChange">
-          <el-option label="全部工作事件" value="all" />
+          <el-option label="全部轨迹" value="all" />
           <el-option label="待确认" :value="0" />
           <el-option label="已确认" :value="1" />
           <el-option label="已驳回" :value="2" />
@@ -20,69 +20,16 @@
       </div>
 
       <el-table v-loading="loading" :data="events" stripe>
-        <el-table-column prop="eventId" label="ID" width="80" />
-        <el-table-column prop="username" label="员工" width="110" />
-        <el-table-column prop="eventType" label="类型" width="90">
-          <template #default="{ row }">
-            <el-tag size="small" :type="row.eventType === 'STAY' ? 'primary' : 'info'">
-              {{ row.eventType === 'STAY' ? '停留' : row.eventType === 'MOVE' ? '移动' : row.eventType }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="地点" min-width="150" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.poiName || '未知地点' }}</template>
-        </el-table-column>
-        <el-table-column label="语义标注" min-width="120">
-          <template #default="{ row }">
-            <span v-if="row.semanticLabel">{{ row.semanticLabel }}</span>
-            <el-tag v-else size="small" type="info">未标注</el-tag>
-            <span v-if="row.confidence != null" class="confidence">
-              ({{ (row.confidence * 100).toFixed(0) }}%)
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column label="停留时长" width="110" align="right">
-          <template #default="{ row }">{{ row.dwellSeconds ? row.dwellSeconds + 's' : '-' }}</template>
-        </el-table-column>
+        <el-table-column label="轨迹名称" min-width="260"><template #default="{ row }">{{ row.name || '未命名轨迹' }} <small>#{{ row.trackId }}</small></template></el-table-column>
+        <el-table-column prop="username" label="员工" width="140" />
         <el-table-column prop="startTime" label="开始时间" min-width="165" />
         <el-table-column prop="endTime" label="结束时间" min-width="165" />
-        <el-table-column label="复核状态" width="100">
-          <template #default="{ row }">
-            <el-tag :type="confirmTagType(row.confirmStatus)" size="small">
-              {{ confirmLabel(row.confirmStatus) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="320" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" @click="showReason(row)">查看理由</el-button>
-            <el-button link type="primary" @click="goDetail(row)">分析详情</el-button>
-            <el-button
-              v-if="row.confirmStatus === 0"
-              link
-              type="success"
-              @click="handleConfirm(row)"
-            >
-              确认
-            </el-button>
-            <el-button
-              v-if="row.confirmStatus === 0"
-              link
-              type="danger"
-              @click="handleReject(row)"
-            >
-              驳回
-            </el-button>
-            <el-button
-              v-if="row.confirmStatus === 1"
-              link
-              @click="handleRevoke(row)"
-            >
-              撤销确认
-            </el-button>
-            <el-button link type="warning" @click="handleReanalyze(row)">重新分析</el-button>
-          </template>
-        </el-table-column>
+        <el-table-column prop="eventCount" label="结果总数" width="95" />
+        <el-table-column label="复核进度" min-width="230"><template #default="{ row }">待确认 {{ row.pending }} · 已确认 {{ row.approved }} · 已驳回 {{ row.rejected }}</template></el-table-column>
+        <el-table-column label="操作" width="180" fixed="right"><template #default="{ row }">
+          <el-button link type="primary" @click="showReason(row)">查看理由</el-button>
+          <el-button link type="primary" @click="goDetail(row)">分析详情</el-button>
+        </template></el-table-column>
       </el-table>
 
       <!-- 分页 -->
@@ -98,24 +45,29 @@
       />
     </el-card>
 
-    <el-dialog v-model="reasonVisible" title="AI 判定理由" width="520px">
-      <div class="reason">{{ current.aiReason || '（无）' }}</div>
+    <el-dialog v-model="reasonVisible" title="轨迹分析摘要" width="680px">
+      <h3>{{ current.name || '未命名轨迹' }}</h3>
+      <p class="reason">共 {{ current.eventCount }} 条结果，待确认 {{ current.pending }} 条，已确认 {{ current.approved }} 条，已驳回 {{ current.rejected }} 条。</p>
+      <p class="reason">{{ Object.entries(current.labels || {}).map(([label, count]) => `${label} ${count} 条`).join('；') }}</p>
+      <div v-loading="reasonLoading">
+        <p class="reason" v-if="reasonError">{{ reasonError }}</p>
+        <details v-for="event in reasonEvents" :key="event.eventId" class="reason-event">
+          <summary>{{ event.poiName || '地点未识别' }} · {{ event.semanticLabel || '未标注' }} · {{ Math.round((event.dwellSeconds || 0) / 60) }} 分钟</summary>
+          <p class="reason">{{ event.startTime }} 至 {{ event.endTime }}</p>
+          <p class="reason">{{ event.aiReason || '未保存判定理由' }}</p>
+        </details>
+      </div>
+      <template #footer><el-button type="primary" @click="goDetail(current)">查看全部结果并复核</el-button></template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
+import request from '@/utils/request'
+import { getTrackWorkEvents } from '@/api/workEvent'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
-import {
-  getWorkEvents,
-  confirmWorkEvent,
-  rejectWorkEvent,
-  reanalyzeTrack,
-  revokeWorkEvent
-} from '@/api/workEvent'
 
 const router = useRouter()
 const loading = ref(false)
@@ -125,16 +77,19 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = ref(10)
 const reasonVisible = ref(false)
-const current = reactive({ aiReason: '' })
+const current = reactive({})
+const reasonEvents = ref([])
+const reasonLoading = ref(false)
+const reasonError = ref('')
+let reasonVersion = 0
 
 async function load() {
   loading.value = true
   try {
-    const res = await getWorkEvents(
-      typeof confirmStatus.value === 'number' ? confirmStatus.value : null,
-      page.value,
-      pageSize.value
-    )
+    const res = await request.get('/admin/work-events/track-groups', { params: {
+      confirmStatus: typeof confirmStatus.value === 'number' ? confirmStatus.value : null,
+      page: page.value, pageSize: pageSize.value
+    } })
     // 管理端分页字段是 list 不是 records（后端 PageVO）
     events.value = res.data.list || []
     total.value = res.data.total || 0
@@ -159,9 +114,21 @@ function handleSizeChange(s) {
   load()
 }
 
-function showReason(row) {
-  current.aiReason = row.aiReason
+async function showReason(row) {
+  const version = ++reasonVersion
+  Object.assign(current, row)
+  reasonEvents.value = []
+  reasonError.value = ''
   reasonVisible.value = true
+  reasonLoading.value = true
+  try {
+    const res = await getTrackWorkEvents(row.trackId)
+    if (version === reasonVersion) reasonEvents.value = res.data || []
+  } catch {
+    if (version === reasonVersion) reasonError.value = '结果读取失败，请关闭后重新打开。'
+  } finally {
+    if (version === reasonVersion) reasonLoading.value = false
+  }
 }
 
 /** 跳到分析详情页：把该事件的来源轨迹、停留点与事件时序放在一屏里看 */
@@ -169,76 +136,12 @@ function goDetail(row) {
   router.push(`/work-events/${row.trackId}`)
 }
 
-async function handleConfirm(row) {
-  await ElMessageBox.confirm(
-    `确认事件 #${row.eventId}？确认后该事件将作为 M5 合规核查的依据。`,
-    '确认事件',
-    { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' }
-  )
-  // 后端回传核查执行情况：确认本身已成功，但核查可能没跑成。
-  // 不能一律提示「已确认」——那样管理员会以为结论已产生，
-  // 到核查结论页却什么都找不到。
-  const res = await confirmWorkEvent(row.eventId)
-  const result = res.data || {}
-  if (result.checkFailed) {
-    ElMessage.warning('已确认，但合规核查执行失败，请到「整改工单 → 核查结论」核对，或联系管理员查看日志')
-  } else if (result.newChecks > 0) {
-    ElMessage.success(`已确认，合规核查新增 ${result.newChecks} 条结论`)
-  } else {
-    ElMessage.success('已确认，合规核查未命中规则')
-  }
-  await load()
-}
-
-async function handleReject(row) {
-  await ElMessageBox.confirm(
-    `驳回事件 #${row.eventId}？该事件不会作为核查依据，但仍会保留用于优化分析参数。`,
-    '驳回事件',
-    { type: 'warning', confirmButtonText: '驳回', cancelButtonText: '取消' }
-  )
-  await rejectWorkEvent(row.eventId)
-  ElMessage.success('已驳回')
-  await load()
-}
-
-/** 撤销确认：误点确认的正路。存在未闭环工单时后端拒绝并给出原因 */
-async function handleRevoke(row) {
-  await ElMessageBox.confirm(
-    `撤销事件 #${row.eventId} 的确认？该事件将退回「待确认」。\n注意：已产生的核查结论会保留，不会删除。`,
-    '撤销确认',
-    { type: 'warning', confirmButtonText: '撤销', cancelButtonText: '取消' }
-  )
-  await revokeWorkEvent(row.eventId)
-  ElMessage.success('已撤销确认，事件退回待确认')
-  await load()
-}
-
-async function handleReanalyze(row) {
-  await ElMessageBox.confirm(
-    `重新分析来源轨迹 #${row.trackId}？旧结论会被清空，下一轮定时任务（30 秒）重新分析。`,
-    '重新分析',
-    { type: 'warning', confirmButtonText: '提交', cancelButtonText: '取消' }
-  )
-  await reanalyzeTrack(row.trackId)
-  ElMessage.success('已提交重新分析，请稍后刷新')
-}
-
-function confirmLabel(s) {
-  if (s === 1) return '已确认'
-  if (s === 2) return '已驳回'
-  return '待确认'
-}
-
-function confirmTagType(s) {
-  if (s === 1) return 'success'
-  if (s === 2) return 'danger'
-  return 'warning'
-}
-
 onMounted(load)
 </script>
 
 <style scoped>
+.reason-event { padding: 12px 0; border-bottom: 1px solid #e2e6ea; color: #374151; }
+.reason-event summary { cursor: pointer; line-height: 1.7; }
 .toolbar {
   display: flex;
   gap: 12px;
@@ -250,7 +153,7 @@ onMounted(load)
 }
 .confidence {
   font-size: 12px;
-  color: #909399;
+  color: #596579;
 }
 .reason {
   font-size: 13px;

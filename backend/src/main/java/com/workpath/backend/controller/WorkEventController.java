@@ -30,6 +30,14 @@ public class WorkEventController {
 
     private final WorkEventService workEventService;
 
+    @GetMapping("/track-groups")
+    public Result<PageVO<java.util.Map<String, Object>>> trackGroups(
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "10") Integer pageSize,
+            @RequestParam(required = false) Integer confirmStatus) {
+        return Result.success(workEventService.listTracks(confirmStatus, page, pageSize));
+    }
+
     @Operation(summary = "工作事件列表（分页）")
     @GetMapping
     public Result<PageVO<WorkEvent>> list(
@@ -73,7 +81,7 @@ public class WorkEventController {
         return Result.success();
     }
 
-    @Operation(summary = "触发轨迹重新分析（下一轮定时任务执行）")
+    @Operation(summary = "触发轨迹重新分析（提交后由手动分析批次执行）")
     @PostMapping("/tracks/{trackId}/reanalyze")
     public Result<Void> reanalyze(@PathVariable("trackId") Long trackId) {
         workEventService.reanalyze(trackId);

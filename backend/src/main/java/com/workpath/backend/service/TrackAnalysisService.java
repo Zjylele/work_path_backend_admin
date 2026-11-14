@@ -38,7 +38,7 @@ public class TrackAnalysisService {
     /** 未分析。上传接口写入的初值 */
     public static final int STATUS_PENDING = 0;
 
-    /** 分析中。进入分析前置，防止定时任务重复捞同一条 */
+    /** 分析中。进入分析前置，防止同一轨迹被重复发起分析 */
     public static final int STATUS_RUNNING = 1;
 
     /** 已完成 */
@@ -113,7 +113,7 @@ public class TrackAnalysisService {
     /**
      * 删除该轨迹已有的全部事件。
      *
-     * <p>用 trackId 精确删除而不是整表清：定时任务可能同时在跑别的轨迹，
+     * <p>用 trackId 精确删除而不是整表清：分析批次可能同时在跑别的轨迹，
      * 整表清会把并发轮次的成果一起删掉。</p>
      */
     private void deleteExistingEvents(Long trackId) {
